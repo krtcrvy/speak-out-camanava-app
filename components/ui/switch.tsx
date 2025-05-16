@@ -12,7 +12,7 @@ import { cn } from '~/lib/utils';
 
 const SwitchWeb = ({
   className,
-  ref,
+
   ...props
 }: React.ComponentProps<typeof SwitchPrimitives.Root>) => (
   <SwitchPrimitives.Root
@@ -22,8 +22,7 @@ const SwitchWeb = ({
       props.disabled && 'opacity-50',
       className
     )}
-    {...props}
-    ref={ref}>
+    {...props}>
     <SwitchPrimitives.Thumb
       className={cn(
         'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-md shadow-foreground/5 ring-0 transition-transform',
@@ -47,7 +46,6 @@ const RGB_COLORS = {
 
 const SwitchNative = ({
   className,
-  ref,
   ...props
 }: React.ComponentProps<typeof SwitchPrimitives.Root>) => {
   const { colorScheme } = useColorScheme();
@@ -74,8 +72,7 @@ const SwitchNative = ({
           props.checked ? 'bg-primary' : 'bg-input',
           className
         )}
-        {...props}
-        ref={ref}>
+        {...props}>
         <Animated.View style={animatedThumbStyle}>
           <SwitchPrimitives.Thumb
             className={'h-7 w-7 rounded-full bg-background shadow-md shadow-foreground/25 ring-0'}

@@ -59,7 +59,7 @@ const buttonTextVariants = cva(
 
 type ButtonProps = React.ComponentProps<typeof Pressable> & VariantProps<typeof buttonVariants>;
 
-const Button = ({ className, variant, size, ref, ...props }: ButtonProps) => {
+const Button = ({ className, variant, size, ...props }: ButtonProps) => {
   return (
     <TextClassContext.Provider
       value={buttonTextVariants({ variant, size, className: 'web:pointer-events-none' })}>
@@ -68,7 +68,6 @@ const Button = ({ className, variant, size, ref, ...props }: ButtonProps) => {
           props.disabled && 'opacity-50 web:pointer-events-none',
           buttonVariants({ variant, size, className })
         )}
-        ref={ref}
         role="button"
         {...props}
       />

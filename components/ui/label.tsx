@@ -8,7 +8,6 @@ const Label = ({
   onLongPress,
   onPressIn,
   onPressOut,
-  ref,
   ...props
 }: React.ComponentProps<typeof LabelPrimitive.Root> &
   React.ComponentProps<typeof LabelPrimitive.Text>) => (
@@ -19,7 +18,6 @@ const Label = ({
     onPressIn={onPressIn}
     onPressOut={onPressOut}>
     <LabelPrimitive.Text
-      ref={ref}
       className={cn(
         'native:text-base text-sm font-medium leading-none text-foreground web:peer-disabled:cursor-not-allowed web:peer-disabled:opacity-70',
         className

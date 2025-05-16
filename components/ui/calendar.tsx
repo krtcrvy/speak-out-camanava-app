@@ -16,8 +16,8 @@ function Calendar({ theme, ...props }: React.ComponentProps<typeof RNCalendar>) 
   );
 }
 
-const SKY_500 = '#0ea5e9';
-const SKY_600 = '#0284c7';
+const SKY_500 = '#8fab37';
+const SKY_600 = '#7d992d';
 
 function getTheme(
   isThemeDark: boolean,

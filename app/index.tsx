@@ -25,7 +25,7 @@ export default function Home() {
                 Speak Out <Text className="font-poppins-bold text-2xl">Camanava</Text>
               </Text>
 
-              <Link href={{ pathname: '/(auth)/sign-up/personal-info' }} asChild>
+              <Link href={{ pathname: '/sandbox' }} asChild>
                 <Button variant="outline">
                   <Text className="font-poppins-regular">Get Started!</Text>
                 </Button>

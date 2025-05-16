@@ -30,12 +30,12 @@ type BottomSheetContentRef = React.ComponentRef<typeof BottomSheetModal>;
 
 const BottomSheetContext = React.createContext({} as BottomSheetContextType);
 
-const BottomSheet = ({ ref, ...props }: React.ComponentPropsWithRef<typeof View>) => {
+const BottomSheet = ({ ...props }: React.ComponentPropsWithRef<typeof View>) => {
   const sheetRef = React.useRef<BottomSheetModal>(null);
 
   return (
     <BottomSheetContext.Provider value={{ sheetRef }}>
-      <View ref={ref} {...props} />
+      <View {...props} />
     </BottomSheetContext.Provider>
   );
 };
@@ -127,7 +127,6 @@ const BottomSheetContent = ({
 const BottomSheetOpenTrigger = ({
   onPress,
   asChild = false,
-  ref,
   ...props
 }: React.ComponentProps<typeof Pressable> & {
   asChild?: boolean;
@@ -138,13 +137,13 @@ const BottomSheetOpenTrigger = ({
     onPress?.(ev);
   }
   const Trigger = asChild ? Slot.Pressable : Pressable;
-  return <Trigger ref={ref} onPress={handleOnPress} {...props} />;
+  return <Trigger onPress={handleOnPress} {...props} />;
 };
 
 const BottomSheetCloseTrigger = ({
   onPress,
   asChild = false,
-  ref,
+
   ...props
 }: React.ComponentProps<typeof Pressable> & {
   asChild?: boolean;
@@ -158,7 +157,7 @@ const BottomSheetCloseTrigger = ({
     onPress?.(ev);
   }
   const Trigger = asChild ? Slot.Pressable : Pressable;
-  return <Trigger ref={ref} onPress={handleOnPress} {...props} />;
+  return <Trigger onPress={handleOnPress} {...props} />;
 };
 
 function BottomSheetView({
@@ -190,12 +189,10 @@ function BottomSheetView({
 const BottomSheetTextInput = ({
   className,
   placeholderClassName,
-  ref,
   ...props
 }: React.ComponentProps<typeof GBottomSheetTextInput>) => {
   return (
     <GBottomSheetTextInput
-      ref={ref}
       className={cn(
         'h-14 items-center rounded-md border border-input bg-background px-3 text-xl leading-[1.25] text-foreground  placeholder:text-muted-foreground disabled:opacity-50',
         className
@@ -208,13 +205,11 @@ const BottomSheetTextInput = ({
 
 const BottomSheetFlatList = ({
   className,
-  ref,
   ...props
 }: React.ComponentProps<typeof GBottomSheetFlatList>) => {
   const insets = useSafeAreaInsets();
   return (
     <GBottomSheetFlatList
-      ref={ref}
       contentContainerStyle={[{ paddingBottom: insets.bottom }]}
       className={cn('py-4', className)}
       keyboardShouldPersistTaps="handled"
@@ -226,7 +221,6 @@ const BottomSheetFlatList = ({
 const BottomSheetHeader = ({
   className,
   children,
-  ref,
   ...props
 }: React.ComponentPropsWithRef<typeof View>) => {
   const { dismiss } = useBottomSheetModal();
@@ -238,7 +232,6 @@ const BottomSheetHeader = ({
   }
   return (
     <View
-      ref={ref}
       className={cn('flex-row items-center justify-between border-b border-border pl-4', className)}
       {...props}>
       {children}
@@ -254,7 +247,6 @@ const BottomSheetFooter = ({
   children,
   className,
   style,
-  ref,
   ...props
 }: Omit<React.ComponentPropsWithRef<typeof View>, 'style'> & {
   bottomSheetFooterProps: GBottomSheetFooterProps;
@@ -265,7 +257,6 @@ const BottomSheetFooter = ({
   return (
     <GBottomSheetFooter {...bottomSheetFooterProps}>
       <View
-        ref={ref}
         style={[{ paddingBottom: insets.bottom + 6 }, style]}
         className={cn('px-4 pt-1.5', className)}
         {...props}>

@@ -18,11 +18,9 @@ const SelectValue = SelectPrimitive.Value;
 const SelectTrigger = ({
   className,
   children,
-  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) => (
   <SelectPrimitive.Trigger
-    ref={ref}
     className={cn(
       'native:h-12 flex h-10 flex-row items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground web:ring-offset-background web:focus:outline-none web:focus:ring-2 web:focus:ring-ring web:focus:ring-offset-2 [&>span]:line-clamp-1',
       props.disabled && 'opacity-50 web:cursor-not-allowed',
@@ -110,11 +108,9 @@ SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectLabel = ({
   className,
-  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Label>) => (
   <SelectPrimitive.Label
-    ref={ref}
     className={cn(
       'native:pb-2 native:pl-10 native:text-base py-1.5 pl-8 pr-2 text-sm font-semibold text-popover-foreground',
       className
@@ -127,11 +123,9 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 const SelectItem = ({
   className,
   children,
-  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) => (
   <SelectPrimitive.Item
-    ref={ref}
     className={cn(
       'web:group native:py-2 native:pl-10 relative flex w-full flex-row items-center rounded-sm py-1.5 pl-8 pr-2 active:bg-accent web:cursor-default web:select-none web:outline-none web:hover:bg-accent/50 web:focus:bg-accent',
       props.disabled && 'opacity-50 web:pointer-events-none',
@@ -150,14 +144,9 @@ SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 const SelectSeparator = ({
   className,
-  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Separator>) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-muted', className)}
-    {...props}
-  />
+  <SelectPrimitive.Separator className={cn('-mx-1 my-1 h-px bg-muted', className)} {...props} />
 );
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 

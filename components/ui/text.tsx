@@ -8,13 +8,12 @@ type TextProps = React.ComponentPropsWithRef<typeof BaseText> & SlottableTextPro
 
 const TextClassContext = React.createContext<string | undefined>(undefined);
 
-const Text = ({ className, asChild = false, ref, ...props }: TextProps) => {
+const Text = ({ className, asChild = false, ...props }: TextProps) => {
   const textClass = React.useContext(TextClassContext);
   const Component = asChild ? Slot.Text : BaseText;
 
   return (
     <Component
-      ref={ref}
       className={cn('text-base text-foreground web:select-text', textClass, className)}
       {...props}
     />

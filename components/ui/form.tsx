@@ -131,7 +131,7 @@ const FormMessage = ({
   className,
   children,
   ...props
-}: React.ComponentPropsWithRef<typeof Animated.Text>) => {
+}: React.ComponentProps<typeof Animated.Text>) => {
   const { error, formMessageNativeID } = useFormField();
   const body = error ? String(error?.message) : children;
 

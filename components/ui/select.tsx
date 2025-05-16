@@ -65,10 +65,14 @@ const SelectScrollDownButton = ({ className, ...props }: SelectPrimitive.ScrollD
   );
 };
 
-const SelectContent = React.forwardRef<
-  SelectPrimitive.ContentRef,
-  SelectPrimitive.ContentProps & { portalHost?: string }
->(({ className, children, position = 'popper', portalHost, ...props }, ref) => {
+const SelectContent = ({
+  className,
+  children,
+  position = 'popper',
+  portalHost,
+  ref,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Content> & { portalHost?: string }) => {
   const { open } = SelectPrimitive.useRootContext();
 
   return (
@@ -76,7 +80,6 @@ const SelectContent = React.forwardRef<
       <SelectPrimitive.Overlay style={Platform.OS !== 'web' ? StyleSheet.absoluteFill : undefined}>
         <Animated.View className="z-50" entering={FadeIn} exiting={FadeOut}>
           <SelectPrimitive.Content
-            ref={ref}
             className={cn(
               'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-96 min-w-[8rem] rounded-md border border-border bg-popover px-1 py-2 shadow-md shadow-foreground/10',
               position === 'popper' &&
@@ -87,6 +90,7 @@ const SelectContent = React.forwardRef<
               className
             )}
             position={position}
+            ref={ref}
             {...props}>
             <SelectScrollUpButton />
             <SelectPrimitive.Viewport
@@ -103,7 +107,7 @@ const SelectContent = React.forwardRef<
       </SelectPrimitive.Overlay>
     </SelectPrimitive.Portal>
   );
-});
+};
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectLabel = ({

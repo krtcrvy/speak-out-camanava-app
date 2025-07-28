@@ -15,11 +15,16 @@ export const AuthLayout = ({ children, withBackground }: AuthLayoutProps) => {
           source={require('~/assets/illustration.png')}
           className="flex-1"
           contentPosition="bottom center"
-          contentFit="contain">
-          <Content className="items-start bg-background/95">{children}</Content>
+          contentFit="contain"
+        >
+          <Content className="items-start bg-background/85">
+            {children}
+          </Content>
         </ImageBackground>
       ) : (
-        <Content className="items-start">{children}</Content>
+        <Content className="items-start">
+          {children}
+        </Content>
       )}
     </Container>
   );

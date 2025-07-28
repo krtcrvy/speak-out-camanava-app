@@ -12,16 +12,21 @@ const buttonVariants = cva(
         default: 'bg-primary web:hover:opacity-90 active:opacity-90',
         destructive: 'bg-destructive web:hover:opacity-90 active:opacity-90',
         outline:
-          'border border-accent bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent',
+          'border-2 border-accent bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent',
+        outline2:
+          'border-4 border-white bg-[#8AA22F] text-white web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent',
         secondary: 'bg-secondary web:hover:opacity-80 active:opacity-80',
         ghost: 'web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent',
         link: 'web:underline-offset-4 web:hover:underline web:focus:underline',
+        green: 'bg-[#8AA22F] text-white web:hover:opacity-90 active:opacity-90',
       },
       size: {
         default: 'h-10 px-4 py-2 native:h-12 native:px-5 native:py-3',
         sm: 'h-9 rounded-md px-3',
         lg: 'h-11 rounded-md px-8 native:h-14',
         icon: 'h-10 w-10',
+        pill: 'h-12 px-8 rounded-full native:h-12',
+        pill2: 'h-9 px-8 rounded-full native:h-9',
       },
     },
     defaultVariants: {
@@ -39,15 +44,19 @@ const buttonTextVariants = cva(
         default: 'text-primary-foreground',
         destructive: 'text-destructive-foreground',
         outline: 'group-active:text-accent-foreground',
+        outline2: 'text-primary-foreground',
         secondary: 'text-secondary-foreground group-active:text-secondary-foreground',
         ghost: 'group-active:text-accent-foreground',
         link: 'text-primary group-active:underline',
+        green: 'text-primary-foreground',
       },
       size: {
         default: '',
         sm: '',
         lg: 'native:text-lg',
         icon: '',
+        pill: 'native:text-base font-medium',
+        pill2: 'native:text-base font-medium',
       },
     },
     defaultVariants: {

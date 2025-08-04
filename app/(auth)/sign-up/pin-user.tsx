@@ -100,10 +100,14 @@ export default function PinUser() {
         .from('users')
         .select('first_name, last_name, contact_no, app_pin')
         .eq('uid', user.id)
-        .single();
+        .maybeSingle(); // ← handles 0 rows safely
 
-      if (error || !data) {
-        console.error('Error fetching user data:', error);
+      if (error) {
+        console.error('❌ Supabase error:', error.message);
+      } else if (!data) {
+        console.warn('⚠️ No user found with uid:', user.id);
+        // Optionally redirect, show message, or fallback
+        return;
       } else {
         setUserData(data);
       }

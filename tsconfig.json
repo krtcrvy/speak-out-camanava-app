@@ -31,7 +31,7 @@
     "nativewind-env.d.ts",
     "**/*.spec.ts",
     "**/*.test.ts"
-  ],
+, "supabase/functions/verify-otp/.index.ts", "supabase/functions/send-otp/.index.ts"  ],
   "exclude": [
     "node_modules",
     "**/__mocks__/*",

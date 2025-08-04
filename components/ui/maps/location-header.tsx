@@ -1,5 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, Modal, Pressable } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  Modal,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
+import { supabase } from '~/utils/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { IncidentRow } from '~/components/ui/maps/incident-modals';
 
 interface LocationHeaderProps {
   street: string;
@@ -8,6 +20,7 @@ interface LocationHeaderProps {
   uid?: string;
   onLogout?: () => void;
   onSignup?: () => void;
+  onSelectIncident?: (incident: IncidentRow) => void;
 }
 
 export default function LocationHeader({
@@ -17,13 +30,40 @@ export default function LocationHeader({
   uid,
   onLogout,
   onSignup,
+  onSelectIncident,
 }: LocationHeaderProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [incidents, setIncidents] = useState<IncidentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (settingsVisible && uid) {
+      fetchUserIncidents();
+    }
+  }, [settingsVisible, uid]);
+
+  const fetchUserIncidents = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('incidents')
+      .select('*')
+      .eq('uid', uid)
+      .order('date', { ascending: false })
+      .order('time', { ascending: false });
+
+    if (!error && data) {
+      setIncidents(data);
+    } else {
+      console.error('Failed to fetch incidents:', error);
+    }
+
+    setLoading(false);
+  };
 
   return (
     <View className="flex-row items-center mx-4 mt-10">
-      {/* Location info bar */}
+      {/* Location info */}
       <View className="flex-1 flex-row items-center bg-white rounded-3xl px-3 py-3 shadow-2xl/90">
         <Image
           source={require('~/assets/map-icons/map.png')}
@@ -32,18 +72,11 @@ export default function LocationHeader({
           resizeMode="contain"
         />
         <View className="flex-1">
-          {isLoggedIn && uid ? (
-            <Text className="text-[10px] font-semibold text-red-600 mb-1">
-              UID: {uid}
-            </Text>
-          ) : null}
-          <Text className="text-xs text-gray-500">
-            Your Current Location
-          </Text>
+          <Text className="text-xs text-gray-500">Your Current Location</Text>
           <Text className="text-sm font-bold text-green-600">
             {street || 'Current street'}
           </Text>
-          <Text className="text-xs text-gray-600" numberOfLines={1} ellipsizeMode="tail">
+          <Text className="text-xs text-gray-600" numberOfLines={1}>
             {address}
           </Text>
         </View>
@@ -62,7 +95,7 @@ export default function LocationHeader({
         />
       </TouchableOpacity>
 
-      {/* Settings Menu Modal */}
+      {/* Dropdown Menu */}
       <Modal
         transparent
         visible={menuVisible}
@@ -96,21 +129,65 @@ export default function LocationHeader({
         </Pressable>
       </Modal>
 
-      {/* Full-Screen Settings View */}
+      {/* Full-Screen Settings */}
       <Modal
         visible={settingsVisible}
         animationType="slide"
         onRequestClose={() => setSettingsVisible(false)}
       >
-        <View className="flex-1 bg-white p-4">
-          <TouchableOpacity
-            className="mb-4"
-            onPress={() => setSettingsVisible(false)}
-          >
-            <Text className="text-lg text-green-600">← Back</Text>
-          </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Settings</Text>
-          {/* Add your settings options here */}
+        <View className="flex-1 bg-white">
+          {/* Header */}
+          <View className="flex-row items-center justify-between mb-2 p-4">
+            <TouchableOpacity onPress={() => setSettingsVisible(false)} className="w-10">
+              <Ionicons name="arrow-back" size={24} color="black" />
+            </TouchableOpacity>
+            <Text className="text-lg font-poppins-semibold flex-1 text-center">
+              My Incidents
+            </Text>
+            <View className="w-10" />
+          </View>
+
+          {/* Content */}
+          <ScrollView className="px-4">
+            {loading ? (
+              <ActivityIndicator size="large" color="#15803d" className="mt-10" />
+            ) : incidents.length === 0 ? (
+              <Text className="text-center text-gray-500 mt-10">
+                No incidents reported yet.
+              </Text>
+            ) : (
+              incidents.map((inc) => (
+                <TouchableOpacity
+                  key={inc.iid}
+                  className="border-b border-gray-200 py-4"
+                  onPress={() => {
+                    onSelectIncident?.(inc);
+                    setSettingsVisible(false);
+                  }}
+                >
+                  <View>
+                    <View className="flex-row justify-between items-center">
+                      <Text className="text-green-600 font-poppins-bold text-base">
+                        {inc.type_of_incident}
+                      </Text>
+                      <Text className="text-xs text-gray-500">{inc.status}</Text>
+                    </View>
+                    {!!inc.location && (
+                      <Text className="text-sm font-poppins-semibold text-gray-700 mt-1">
+                        {inc.location}
+                      </Text>
+                    )}
+                    {!!inc.description && (
+                      <Text className="text-sm text-gray-600 mt-1">{inc.description}</Text>
+                    )}
+                    <Text className="text-xs text-gray-400 mt-1">
+                      {inc.date} • {inc.time}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
         </View>
       </Modal>
     </View>

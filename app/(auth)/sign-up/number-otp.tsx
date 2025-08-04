@@ -7,6 +7,8 @@ import { Pressable, View, Text, AppState } from 'react-native';
 import { supabase } from '~/utils/supabase';
 import * as React from 'react';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
+
 AppState.addEventListener('change', (state) => {
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
@@ -26,6 +28,50 @@ export default function NumberOTP() {
 
   const fullDisplayNumber = phoneNumber ? `+63${phoneNumber}` : '';
 
+  const verifyOtp = async (inputOtp: string) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneNumber, code: inputOtp }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('❌ Failed to send OTP:', result);
+        return false;
+      }
+
+      if (!response.ok || !result?.token) {
+        console.error('❌ OTP verification failed:', result?.error || result);
+        setError(true);
+        setDigits(["", "", "", "", "", ""]);
+        inputs.current[0]?.focus();
+        return;
+      }
+
+      const jwtToken = result.token;
+
+      const { error: loginError } = await supabase.auth.setSession({
+        access_token: jwtToken,
+        refresh_token: jwtToken, // If you're not using refresh tokens, just set both
+      });
+
+      if (loginError) {
+        console.error('❌ Supabase login failed:', loginError.message);
+        setError(true);
+        return;
+      }
+
+      console.log('✅ Logged in successfully');
+      router.replace('/(auth)/sign-up/pin-user');
+    } catch (err) {
+      console.error('❌ Network error during OTP verification:', err);
+      setError(true);
+    }
+  };
+
   const handleChange = async (text: string, idx: number) => {
     if (/^\d?$/.test(text)) {
       if (error || notFoundError) {
@@ -43,50 +89,7 @@ export default function NumberOTP() {
 
       if (idx === 5 || newDigits.every((d) => d !== '')) {
         const inputOtp = newDigits.join('');
-
-        // ✅ Fetch user by contact_no
-        const { data: user, error: fetchError } = await supabase
-          .from('users')
-          .select('uid, otp_code')
-          .eq('contact_no', phoneNumber)
-          .single();
-
-        if (fetchError || !user) {
-          console.error('User not found:', fetchError);
-          setNotFoundError(true);
-          setDigits(["", "", "", "", "", ""]);
-          setTimeout(() => inputs.current[0]?.focus(), 100);
-          return;
-        }
-
-        // ❌ Wrong OTP
-        if (user.otp_code !== inputOtp) {
-          setError(true);
-          setDigits(["", "", "", "", "", ""]);
-          setTimeout(() => inputs.current[0]?.focus(), 100);
-          return;
-        }
-
-        // ✅ OTP matched – now log in the user (mock session for dev)
-        const loginResult = await supabase.auth.setSession({
-          access_token: `MOCK_ACCESS_TOKEN_${user.uid}`,
-          refresh_token: `MOCK_REFRESH_TOKEN_${user.uid}`,
-        });
-
-        if (loginResult.error) {
-          console.error('Supabase login failed:', loginResult.error.message);
-          setError(true);
-          return;
-        }
-
-        // ✅ Clear OTP (optional in dev)
-        await supabase
-          .from('users')
-          .update({ otp_code: null })
-          .eq('uid', user.uid);
-
-        console.log('Logged in as UID:', user.uid);
-        router.replace('/(auth)/sign-up/pin-user');
+        await verifyOtp(inputOtp);
       }
     }
   };
@@ -99,21 +102,16 @@ export default function NumberOTP() {
   };
 
   const handleResendCode = async () => {
-    console.log("Resend code triggered for:", fullDisplayNumber);
-
-    const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/send-otp`, {
+    const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ phoneNumber }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneNumber }),
     });
 
     if (!response.ok) {
-      console.error('Resend OTP failed');
+      console.error('❌ Resend OTP failed');
     } else {
-      console.log('OTP resent successfully');
+      console.log('✅ OTP resent successfully');
     }
 
     setResendTimer(50);
@@ -164,7 +162,7 @@ export default function NumberOTP() {
               <Text className="text-red-500 text-sm font-medium text-center">
                 {notFoundError
                   ? '❗ Number not registered. Please use a registered account.'
-                  : '❌ Incorrect OTP! Please try again.'}
+                  : '❌ OTP is incorrect or expired! Please try again.'}
               </Text>
             )}
 

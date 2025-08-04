@@ -1,3 +1,5 @@
+// report-incident-modal.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   Modal,
@@ -12,6 +14,8 @@ import {
 import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '~/utils/supabase';
+
+const EMOJIS = ['🦺', '🚧', '🚨', '👮', '🛑', '⚠️'];
 
 export interface ReportIncidentModalProps {
   visible: boolean;
@@ -37,10 +41,8 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [showValidationError, setShowValidationError] = useState(false);
-
   const [displayLocationName, setDisplayLocationName] = useState(locationName);
   const [city, setCity] = useState('');
-
   const [picking, setPicking] = useState(false);
   const [tempPickRegion, setTempPickRegion] = useState<Region>({
     latitude: defaultLatLng.latitude,
@@ -49,11 +51,11 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     longitudeDelta: 0.005,
   });
 
-  /** Reset state whenever modal closes */
+  const [isSafetyTip, setIsSafetyTip] = useState(false);
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!visible) {
-      resetReportFields();
-    }
+    if (!visible) resetReportFields();
   }, [visible]);
 
   const resetReportFields = () => {
@@ -64,32 +66,27 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     setDescription('');
     setShowValidationError(false);
     setPicking(false);
+    setSelectedEmoji(null);
+    setIsSafetyTip(false);
   };
 
-  /** Get formatted address using reverse geocoding */
   const formatAddressFromCoords = async (lat: number, lng: number) => {
     try {
       const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-
       if (geocodes.length > 0) {
         const p = geocodes[0];
-        const streetNumber = p.name || '';
-        const streetName = p.street || 'Unknown Street';
         const cityName = p.city || p.subregion || 'CAMANAVA';
         setCity(cityName);
 
         const formatted = [
-          `${streetNumber} ${streetName}`.trim(),
-          cityName ? `${cityName}` : '',
+          `${p.name || ''} ${p.street || 'Unknown Street'}`.trim(),
+          cityName,
           'Metro Manila',
         ]
           .filter(Boolean)
           .join(', ');
 
         setDisplayLocationName(formatted);
-      } else {
-        setDisplayLocationName(`Camanava, Metro Manila`);
-        setCity('Camanava');
       }
     } catch (err) {
       console.error('reverseGeocode error:', err);
@@ -102,69 +99,58 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     }
   }, [reportLatLng]);
 
-  const handleOpenPicker = () => {
-    setTempPickRegion({
-      latitude: reportLatLng.latitude,
-      longitude: reportLatLng.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    });
-    setPicking(true);
-  };
-
-  const handleIncidentTypeChange = (type: string) => {
-    setIncidentType(type);
-    setShowValidationError(false);
-  };
-
-  const handleConfirmPick = () => {
-    setReportLatLng({
-      latitude: tempPickRegion.latitude,
-      longitude: tempPickRegion.longitude,
-    });
-    setShowValidationError(false);
-    setPicking(false);
-  };
-
-  const handleCancelPick = () => {
-    setPicking(false);
-  };
-
   const handleSubmit = async () => {
-    if (!incidentType || description.trim().length < 10 || !reportLatLng) {
+    if (description.trim().length < 10 || !reportLatLng || (isSafetyTip && !selectedEmoji)) {
+      setShowValidationError(true);
+      return;
+    }
+
+    if (!isSafetyTip && !incidentType) {
       setShowValidationError(true);
       return;
     }
 
     setLoading(true);
     try {
-      const mockUid = 'c4ec670e-4daf-45f5-9959-b03779bf01ff';
-      const { error } = await supabase.from('incidents').insert([
-        {
-          uid: mockUid,
-          status: 'Sent',
-          type_of_incident: incidentType,
-          description,
-          location: displayLocationName,
-          city,
-          latitude: reportLatLng.latitude,
-          longitude: reportLatLng.longitude,
-          original_latitude: deviceLocation.latitude,
-          original_longitude: deviceLocation.longitude,
-          date: new Date().toISOString().split('T')[0],
-          time: new Date().toTimeString().split(' ')[0],
-          police_stations: null,
-        },
-      ]);
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      if (error) throw error;
+      if (sessionError || !session?.user) {
+        Alert.alert('Authentication Required', 'Please sign in to continue.');
+        setLoading(false);
+        return;
+      }
 
-      Alert.alert('✅ Report Submitted', 'Your incident has been reported successfully!');
-      resetReportFields(); // Reset fields after submit
+      const userUid = session.user.id;
+      const baseData = {
+        uid: userUid,
+        description,
+        location: displayLocationName,
+        city,
+        latitude: reportLatLng.latitude,
+        longitude: reportLatLng.longitude,
+        original_latitude: deviceLocation.latitude,
+        original_longitude: deviceLocation.longitude,
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toTimeString().split(' ')[0],
+      };
+
+      const result = isSafetyTip
+        ? await supabase.from('safety_tips').insert([{ ...baseData, emoji: selectedEmoji }])
+        : await supabase.from('incidents').insert([
+            { ...baseData, type_of_incident: incidentType, status: 'Sent', police_stations: null },
+          ]);
+
+      if (result.error) throw result.error;
+
+      Alert.alert('✅ Submitted', isSafetyTip ? 'Your tip was posted!' : 'Your incident was reported!');
+      resetReportFields();
       onClose();
     } catch (err) {
-      console.error('Supabase insert error:', err);
-      Alert.alert('Error', 'Failed to submit the incident report.');
+      console.error('Insert error:', err);
+      Alert.alert('Error', 'Failed to submit.');
     } finally {
       setLoading(false);
     }
@@ -173,19 +159,24 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-center items-center bg-black/40 px-4">
-        <View className="w-full max-w-md bg-white rounded-2xl p-5" style={{ minHeight: 500 }}>
+        <View className="w-full max-w-md bg-white rounded-2xl p-5 max-h-[90%]">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-8">
-            <View className="flex-1 items-center">
-              <Text className="text-xl font-poppins-bold text-gray-800">Report an Incident</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} className="absolute right-0 p-2">
-              <Text className="text-2xl text-gray-800 font-poppins-regular">×</Text>
+          <View className="flex-row justify-between mb-6 items-center">
+            <Text className="text-xl font-poppins-bold">
+              {isSafetyTip ? 'Post a Safety Tip' : 'Report an Incident'}
+            </Text>
+            <TouchableOpacity onPress={() => setIsSafetyTip(!isSafetyTip)}>
+              <Text className="text-green-600 font-poppins-semibold text-sm">
+                {isSafetyTip ? 'Switch to Incident' : 'Switch to Tip'}
+              </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Location */}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 12 }}
+          >
+            {/* Location Display */}
             <View className="mb-4">
               <Text className="text-sm text-gray-600 font-poppins-regular mb-1">Location:</Text>
               <Text className="text-base font-poppins-semibold text-green-600">
@@ -194,18 +185,17 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
               {!picking && (
                 <TouchableOpacity
                   className="self-center mt-2 px-3 py-2 rounded-3xl bg-gray-100"
-                  onPress={handleOpenPicker}
+                  onPress={() => setPicking(true)}
                 >
                   <Text className="text-gray-800 font-poppins-medium text-sm">
-                    Change report location
+                    Change location
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {picking ? (
-              <View>
-                {/* Inline Map Picker */}
+            {picking && (
+              <>
                 <View className="h-80 w-full mb-4 rounded-lg overflow-hidden">
                   <MapView
                     provider={PROVIDER_GOOGLE}
@@ -220,85 +210,113 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                     <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
                   </View>
                 </View>
-
-                <View className="flex-row justify-between">
+                <View className="flex-row justify-between mb-4">
                   <TouchableOpacity
                     className="bg-gray-300 px-4 py-2 rounded-lg w-[48%] items-center"
-                    onPress={handleCancelPick}
+                    onPress={() => setPicking(false)}
                   >
                     <Text className="font-poppins-medium text-gray-800">Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     className="bg-green-500 px-4 py-2 rounded-lg w-[48%] items-center"
-                    onPress={handleConfirmPick}
+                    onPress={() => {
+                      setReportLatLng({
+                        latitude: tempPickRegion.latitude,
+                        longitude: tempPickRegion.longitude,
+                      });
+                      setPicking(false);
+                    }}
                   >
                     <Text className="font-poppins-medium text-white">Confirm</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            ) : (
-              <>
-                {/* Incident Type */}
-                <View
-                  className={`border rounded-lg mb-4 p-3 ${
-                    showValidationError && !incidentType ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                >
-                  <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">
-                    Type of Incident
-                  </Text>
-                  {['Theft', 'Sexual Crime', 'Disorderly Conduct'].map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      className="py-2"
-                      onPress={() => handleIncidentTypeChange(type)}
+              </>
+            )}
+
+            {!isSafetyTip && (
+              <View
+                className={`border rounded-lg mb-4 p-3 ${
+                  showValidationError && !incidentType ? 'border-red-500' : 'border-gray-300'
+                }`}
+              >
+                <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">
+                  Type of Incident
+                </Text>
+                {['Theft', 'Sexual Crime', 'Disorderly Conduct'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    className="py-2"
+                    onPress={() => {
+                      setIncidentType(type);
+                      setShowValidationError(false);
+                    }}
+                  >
+                    <Text
+                      className={`font-poppins-regular ${
+                        incidentType === type ? 'text-green-600' : 'text-gray-800'
+                      }`}
                     >
-                      <Text
-                        className={`font-poppins-regular ${
-                          incidentType === type ? 'text-green-600' : 'text-gray-800'
-                        }`}
-                      >
-                        {type}
-                      </Text>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <TextInput
+              placeholder="Enter a detailed description (min 10 characters)"
+              multiline
+              className="border border-gray-300 rounded-lg p-3 text-sm mb-4"
+              value={description}
+              onChangeText={(text) => {
+                setDescription(text);
+                setShowValidationError(false);
+              }}
+              maxLength={500}
+            />
+
+            {isSafetyTip && (
+              <View className="mb-4">
+                <Text className="text-sm font-poppins-regular text-gray-700 mb-1">
+                  Select an emoji that best represents your tip:
+                </Text>
+                <View className="flex-row justify-between">
+                  {EMOJIS.map((emoji) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      className={`px-3 py-2 rounded-xl ${
+                        selectedEmoji === emoji ? 'bg-green-200' : 'bg-gray-100'
+                      }`}
+                      onPress={() => setSelectedEmoji(emoji)}
+                    >
+                      <Text className="text-xl">{emoji}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
+              </View>
+            )}
 
-                {/* Description */}
-                <TextInput
-                  placeholder="Enter a detailed description (min 10 characters)"
-                  multiline
-                  className="border border-gray-300 rounded-lg p-3 text-sm mb-4"
-                  value={description}
-                  onChangeText={(text) => {
-                    setDescription(text);
-                    setShowValidationError(false);
-                  }}
-                  maxLength={500}
-                />
+            {/* Submit Button */}
+            <TouchableOpacity
+              className={`rounded-lg py-4 items-center mt-3 ${
+                loading ? 'bg-gray-400' : 'bg-green-500'
+              }`}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-white font-poppins-semibold text-lg">
+                  {isSafetyTip ? 'POST TIP' : 'SUBMIT REPORT'}
+                </Text>
+              )}
+            </TouchableOpacity>
 
-                {/* Submit */}
-                <TouchableOpacity
-                  className={`rounded-lg py-4 items-center mt-3 ${
-                    loading ? 'bg-gray-400' : 'bg-green-500'
-                  }`}
-                  onPress={handleSubmit}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text className="text-white font-poppins-semibold text-lg">SUBMIT REPORT</Text>
-                  )}
-                </TouchableOpacity>
-
-                {/* Error */}
-                {showValidationError && (
-                  <Text className="self-center text-red-600 text-sm font-medium mt-1">
-                    Please complete all required fields!
-                  </Text>
-                )}
-              </>
+            {showValidationError && (
+              <Text className="self-center text-red-600 text-sm font-medium mt-1">
+                Please complete all required fields!
+              </Text>
             )}
           </ScrollView>
         </View>

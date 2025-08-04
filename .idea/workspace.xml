@@ -5,23 +5,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a832beb3-7305-4ab7-adad-22a6e99bfd3f" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/_layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/number-otp.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/number-otp.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/pin-user.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/pin-user.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/switch-account.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/switch-account.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/adaptive-icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/adaptive-icon.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/icon.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/splash.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/splash.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/layouts/auth/auth-header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/layouts/auth/auth-header.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/layouts/auth/auth-layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/layouts/auth/auth-layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/button.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/button.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/input.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/input.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/progress.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/progress.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/icons/chevron-right.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/icons/chevron-right.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pnpm-lock.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pnpm-lock.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/supabase/.temp/cli-latest" beforeDir="false" afterPath="$PROJECT_DIR$/supabase/.temp/cli-latest" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/supabase/functions/send-otp/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/supabase/functions/verify-otp/index.ts" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/tsconfig.json" beforeDir="false" afterPath="$PROJECT_DIR$/tsconfig.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/supabase.ts" beforeDir="false" afterPath="$PROJECT_DIR$/utils/supabase.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,7 +51,7 @@
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;mainv2&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;
   }

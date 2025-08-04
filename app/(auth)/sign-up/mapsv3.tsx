@@ -428,6 +428,7 @@ export default function Maps() {
             uid={sessionUserId ?? undefined}
             onLogout={handleLogout}
             onSignup={handleSignup}
+            onSelectIncident={handleIncidentPress}
           />
         </View>
 
@@ -437,7 +438,8 @@ export default function Maps() {
           onPress={recenterMap}
         >
           <Image
-            source={{ uri: 'https://ik.imagekit.io/rmlbayysp/1749183092006-download__8__Xd_Qg7UKP.png' }}
+            source={require('~/assets/map-icons/target.png')}
+            tintColor="#6B7280"
             className="w-7 h-7"
             resizeMode="contain"
           />

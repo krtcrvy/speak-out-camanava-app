@@ -55,7 +55,7 @@ export default function Home() {
 
               <Text className="font-inter-regular text-muted-foreground">
                 Already have an account?{' '}
-                <Link href={{ pathname: '/(auth)/sign-up/switch-account' as never }} asChild>
+                <Link href={{ pathname: '/(auth)/sign-up/number-otp' as never }} asChild>
                   <Text className="font-inter-bold text-[#8AA22F]">Sign In</Text>
                 </Link>
               </Text>

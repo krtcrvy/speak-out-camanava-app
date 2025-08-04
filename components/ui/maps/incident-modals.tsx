@@ -108,7 +108,7 @@ export function ClusterIncidentsModal({
             onPress={onClose}
             style={{ position: 'absolute', top: 8, right: 8, padding: 8 }}
           >
-            <Text className="text-xl text-gray-500">×</Text>
+            <Text className="text-xl font-poppins-bold text-gray-500">×</Text>
           </TouchableOpacity>
 
           {/* Header */}
@@ -123,7 +123,13 @@ export function ClusterIncidentsModal({
 
           {/* Incident List */}
           <ScrollView>
-            {incidents.map((inc) => {
+            {[...incidents]
+            .sort((a, b) => {
+              const aTime = new Date(`${a.date}T${a.time}`).getTime();
+              const bTime = new Date(`${b.date}T${b.time}`).getTime();
+              return bTime - aTime;
+            })
+            .map((inc) => {
               const ago = timeAgo(inc.date, inc.time);
               return (
                 <TouchableOpacity
@@ -133,9 +139,14 @@ export function ClusterIncidentsModal({
                   onPress={() => onSelectIncident(inc)}
                 >
                   <View className="flex-row justify-between items-center">
-                    <Text className="font-poppins-bold text-base text-green-600" numberOfLines={1}>
-                      {inc.type_of_incident}
-                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      <Text className="font-poppins-bold text-base text-green-600" numberOfLines={1}>
+                        {inc.type_of_incident}
+                      </Text>
+                      <Text className="text-[10px] font-poppins-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                        {inc.status}
+                      </Text>
+                    </View>
                     <Text className="font-poppins-regular text-xs text-gray-500 ml-2">
                       {formatDateTime(inc.date, inc.time)} • {ago}
                     </Text>
@@ -184,31 +195,45 @@ export function IncidentDetailsModal({
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.2,
             shadowRadius: 6,
-            elevation: 5, // Android shadow
+            elevation: 5,
           }}
         >
-          {/* Close button */}
-          <TouchableOpacity
-            onPress={onClose}
-            style={{ position: 'absolute', top: 8, right: 8, padding: 8 }}
-          >
-            <Text className="text-xl text-gray-500">×</Text>
-          </TouchableOpacity>
+          {/* Header Row */}
+          <View className="flex-row justify-between items-start">
+            <View className="flex-row flex-wrap items-center flex-1">
+              <Text className="font-poppins-semibold text-lg text-gray-900 mr-2">
+                {incident.type_of_incident}
+              </Text>
 
-          {/* Header */}
-          <View className="flex-row items-center">
-            <Text className="font-poppins-semibold text-lg text-gray-900 mr-2">{incident.type_of_incident}</Text>
-            <Text className="text-xs font-semibold text-gray-500">
-              {formatDateTime(incident.date, incident.time)} • {ago}
-            </Text>
+              {!!incident.status && (
+                <Text className="text-[10px] font-poppins-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                  {incident.status}
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity onPress={onClose}>
+              <Text className="text-xl font-poppins-semibold text-gray-500">×</Text>
+            </TouchableOpacity>
           </View>
+
+          <Text className="text-xs font-poppins-regular text-gray-500">
+            {formatDateTime(incident.date, incident.time)} • {ago}
+          </Text>
+
+          {/* Location */}
           {!!incident.location && (
-            <Text className="text-xs font-poppins-semibold text-green-600 mb-1">{incident.location}</Text>
+            <Text className="text-xs font-poppins-semibold text-green-600 mt-1">
+              {incident.location}
+            </Text>
           )}
+
           {/* Description */}
-          <ScrollView>
+          <ScrollView className="mt-2">
             {!!incident.description && (
-              <Text className="text-sm font-poppins-regular text-gray-800">{incident.description}</Text>
+              <Text className="text-sm font-poppins-regular text-gray-800">
+                {incident.description}
+              </Text>
             )}
           </ScrollView>
         </View>
@@ -216,3 +241,5 @@ export function IncidentDetailsModal({
     </Modal>
   );
 }
+
+

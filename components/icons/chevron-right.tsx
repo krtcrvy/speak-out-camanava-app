@@ -1,6 +1,6 @@
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { Icon } from '~/components/ui/icon';
 
-Icon(ChevronLeft);
+Icon(ChevronRight);
 
-export { ChevronLeft };
+export { ChevronRight };

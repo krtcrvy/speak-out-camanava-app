@@ -26,7 +26,7 @@ AppState.addEventListener('change', (state) => {
   }
 });
 
-export default function ReenterPIN() {
+export default function ReenterNewPIN() {
   const [digits, setDigits] = React.useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = React.useState(false);
   const inputs = React.useRef<Array<TextInput | null>>([]);
@@ -62,7 +62,7 @@ export default function ReenterPIN() {
     try {
       setLoading(true);
 
-      // 1️⃣ Get current authenticated user
+      // Get current logged-in user
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData.user) {
         console.error("❌ Could not fetch current user:", userError);
@@ -73,7 +73,7 @@ export default function ReenterPIN() {
 
       const uid = userData.user.id;
 
-      // 2️⃣ Update app_pin for this user
+      // Update PIN in database
       const { error: updateError } = await supabase
         .from('users')
         .update({ app_pin: reenteredPin })
@@ -86,14 +86,11 @@ export default function ReenterPIN() {
         return;
       }
 
-      console.log("✅ PIN saved for user:", uid);
+      console.log("✅ PIN updated for user:", uid);
 
-      // 3️⃣ Clear sign-up context and redirect
-      resetData();
-      setTimeout(() => {
-        setLoading(false);
-        router.replace('/(auth)/sign-up/mapsv3');
-      }, 400);
+      // Redirect to pin-user for login with the new PIN
+      setLoading(false);
+      router.replace('/(auth)/sign-up/pin-user');
 
     } catch (err) {
       console.error("❌ Unexpected error:", err);
@@ -101,6 +98,7 @@ export default function ReenterPIN() {
       setLoading(false);
     }
   };
+
 
   return (
     <>

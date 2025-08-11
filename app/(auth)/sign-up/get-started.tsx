@@ -21,8 +21,29 @@ export default function Home() {
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
+
       if (data.session) {
-        // If a session exists, redirect to the pin screen
+        const uid = data.session.user.id;
+
+        // Check if UID exists in `users` table
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('uid')
+          .eq('uid', uid)
+          .maybeSingle();
+
+        if (error) {
+          console.error('❌ Error checking user existence:', error);
+          return;
+        }
+
+        if (!userData) {
+          console.warn('⚠️ UID not found in users table. Removing session...');
+          await supabase.auth.signOut();
+          return; // Stay on this screen
+        }
+
+        // If UID exists, continue to PIN screen
         router.replace('/(auth)/sign-up/pin-user');
       }
     };

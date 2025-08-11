@@ -15,6 +15,8 @@ import * as React from 'react';
 import { Button } from '~/components/ui/button';
 import { supabase } from '~/utils/supabase';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
+
 export default function PinUser() {
   const [digits, setDigits] = React.useState(["", "", "", "", "", ""]);
   const [error, setError] = React.useState(false);
@@ -125,6 +127,33 @@ export default function PinUser() {
     );
   }
 
+  const handleForgotPin = async () => {
+    if (!userData?.contact_no) return;
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: userData.contact_no }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('❌ Failed to send OTP:', result);
+        return;
+      }
+
+      console.log(`✅ OTP sent to ${userData.contact_no}`);
+      router.push({
+        pathname: '/(auth)/sign-up/forgot-pin/forgot-pin',
+        params: { phoneNumber: userData.contact_no }, // Pass number to OTP screen
+      });
+    } catch (err) {
+      console.error('❌ Error sending OTP:', err);
+    }
+  };
+
   return (
     <>
       <Stack.Screen options={{ title: 'PIN Login', headerShown: false }} />
@@ -203,8 +232,10 @@ export default function PinUser() {
               ) : success ? (
                 <Text className="text-[#8AA22F] text-sm font-medium mt-1">✓ PIN Verified!</Text>
               ) : (
-                <Pressable onPress={() => router.push('/(auth)/sign-up/number-otp')}>
-                  <Text className="text-[#8AA22F] text-sm font-poppins-semibold mt-1">Forgot PIN?</Text>
+                <Pressable onPress={handleForgotPin}>
+                  <Text className="text-[#8AA22F] text-sm font-poppins-semibold mt-1">
+                    Forgot PIN?
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -233,7 +264,11 @@ export default function PinUser() {
       >
         <View className="flex-1 justify-end bg-black/30">
           <View className="bg-[#8AA22F] p-6 rounded-t-3xl items-center">
-            <Text className="text-white text-lg font-semibold mb-4">You're about to switch accounts</Text>
+            <Text className="text-white text-lg font-semibold mb-4">
+              You're about to switch accounts
+            </Text>
+
+            {/* Proceed Button */}
             <View className="w-80 gap-4">
               <Button
                 variant="default"
@@ -247,6 +282,23 @@ export default function PinUser() {
                 <Text className="text-[#8AA22F] font-semibold">Proceed</Text>
               </Button>
             </View>
+            
+            {/* 🔹 Logout Button */}
+            <View className="w-80 gap-4 mt-4">
+              <Button
+                variant="outline2"
+                size="pill2"
+                onPress={async () => {
+                  setShowModal(false);
+                  await supabase.auth.signOut();
+                  router.replace('/(auth)/sign-up/get-started');
+                }}
+              >
+                <Text className="text-white font-semibold">Logout</Text>
+              </Button>
+            </View>
+
+            {/* Cancel Button */}
             <View className="w-80 gap-4 mt-4">
               <Button
                 variant="outline2"

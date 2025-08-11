@@ -3,13 +3,11 @@ import { AuthHeader } from '~/components/layouts/auth/auth-header';
 import { AuthLayout } from '~/components/layouts/auth/auth-layout';
 import { PhoneNumberInput } from '~/components/ui/input';
 import { Button } from '~/components/ui/button';
-import { Pressable, View, Text } from 'react-native';
+import { Pressable, View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '~/utils/supabase';
 import * as React from 'react';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
-
 
 const sendOtp = async (number: string) => {
   try {
@@ -21,16 +19,7 @@ const sendOtp = async (number: string) => {
       body: JSON.stringify({ phone: number }),
     });
 
-    const rawText = await response.text(); // don't immediately parse JSON
-    console.log('🔍 Raw response:', rawText);
-
-    let result;
-    try {
-      result = JSON.parse(rawText);
-    } catch {
-      console.error('❌ Failed to parse JSON, likely HTML/text instead');
-      return false;
-    }
+    const result = await response.json();
 
     if (!response.ok) {
       console.error('❌ Failed to send OTP:', result);
@@ -40,7 +29,7 @@ const sendOtp = async (number: string) => {
     console.log(`✅ OTP sent to ${number}`);
     return true;
   } catch (err) {
-    console.error('❌ Network or parsing error:', err);
+    console.error('❌ Error sending OTP:', err);
     return false;
   }
 };
@@ -49,7 +38,7 @@ export default function SwitchAccounts() {
   const [phoneNumber, setPhoneNumber] = React.useState('');
   const [showError, setShowError] = React.useState(false);
   const [notFoundError, setNotFoundError] = React.useState(false);
-  const [networkError, setNetworkError] = React.useState(false);
+  const [loading, setLoading] = React.useState(false); // ✅ Loading state
   const router = useRouter();
 
   const handleInputChange = (input: string) => {
@@ -66,54 +55,42 @@ export default function SwitchAccounts() {
     setPhoneNumber(digits);
     setShowError(false);
     setNotFoundError(false);
-    setNetworkError(false);
   };
 
   const handleClear = () => {
     setPhoneNumber('');
     setShowError(false);
     setNotFoundError(false);
-    setNetworkError(false);
   };
 
   const handleConfirm = async () => {
+    if (loading) return; // Prevent double-clicks
+    setLoading(true);
+
     const isTenDigits = phoneNumber.length === 10;
     const startsWithNine = phoneNumber.startsWith('9');
     const notAllSame = !/^(\d)\1+$/.test(phoneNumber);
 
     if (!isTenDigits || !startsWithNine || !notAllSame) {
       setShowError(true);
+      setLoading(false);
       return;
     }
 
-    try {
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('uid')
-        .eq('contact_no', phoneNumber)
-        .single();
-
-      if (error || !user) {
-        setNotFoundError(true);
-        return;
-      }
-
-      const otpSent = await sendOtp(phoneNumber);
-      if (!otpSent) {
-        setNetworkError(true);
-        return;
-      }
-
-      router.push({
-        pathname: '/(auth)/sign-up/number-otp',
-        params: { phoneNumber }
-      });
-
-      setPhoneNumber('');
-    } catch (err) {
-      console.error('❌ Error checking user:', err);
-      setNetworkError(true);
+    const otpSent = await sendOtp(phoneNumber);
+    if (!otpSent) {
+      setShowError(true);
+      setLoading(false);
+      return;
     }
+
+    router.push({
+      pathname: '/(auth)/sign-up/number-otp',
+      params: { phoneNumber },
+    });
+
+    setPhoneNumber('');
+    setLoading(false);
   };
 
   return (
@@ -147,12 +124,6 @@ export default function SwitchAccounts() {
                 ❗ This number is not registered in the system
               </Text>
             )}
-
-            {networkError && (
-              <Text className="text-red-600 text-sm font-medium mt-2 text-center">
-                ❗ Failed to connect to backend. Please try again later.
-              </Text>
-            )}
           </View>
         </View>
 
@@ -160,10 +131,14 @@ export default function SwitchAccounts() {
           <Button
             variant="green"
             size="pill"
-            disabled={phoneNumber.length !== 10}
+            disabled={phoneNumber.length !== 10 || loading} // ✅ Disable when loading
             onPress={handleConfirm}
           >
-            <Text className="font-poppins-semibold text-white">Confirm Number</Text>
+            {loading ? ( // ✅ Show spinner when loading
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text className="font-poppins-semibold text-white">Confirm Number</Text>
+            )}
           </Button>
         </View>
       </AuthLayout>

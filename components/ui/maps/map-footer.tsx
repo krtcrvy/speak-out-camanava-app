@@ -68,7 +68,7 @@ const TabItem = React.forwardRef<View, TabItemProps>(
               width: 20,
               height: 20,
               tintColor: isActive ? '#15803d' : '#6B7280',
-              marginBottom: 4,
+              marginBottom: 8,
             }}
             resizeMode="contain"
           />

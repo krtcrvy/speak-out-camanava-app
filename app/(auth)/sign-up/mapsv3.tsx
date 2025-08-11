@@ -29,6 +29,7 @@ import LocationHeader from '~/components/ui/maps/location-header';
 import PoliceView from '~/components/ui/maps/police';
 import HospitalView from '~/components/ui/maps/hospital';
 import FireView from '~/components/ui/maps/fire';
+import StationDetailsModal from '~/components/ui/maps/station-details-modal';
 import { ReportIncidentModal } from '~/components/ui/maps/report-incident-modal';
 import { supabase } from '~/utils/supabase';
 
@@ -38,8 +39,9 @@ import {
   type IncidentRow,
 } from '~/components/ui/maps/incident-modals';
 
-/** ---------------- Types ---------------- */
 
+
+/** ---------------- Types ---------------- */
 interface ClusterProps {
   incident: IncidentRow;
   id: number;
@@ -47,8 +49,19 @@ interface ClusterProps {
 
 type ClusterPoint = Feature<Point, ClusterProps>;
 
-/** ---------------- Utils ---------------- */
+interface Station {
+  id: number;
+  name: string;
+  address: string;
+  phone_number: string;
+  chief?: string;
+  latitude: number;
+  longitude: number;
+  dist_m?: number;
+  logo_url?: string;
+}
 
+/** ---------------- Utils ---------------- */
 function getCityFromCoordinates(
   lat: number,
   lng: number
@@ -65,7 +78,6 @@ function regionToZoom(region: Region): number {
 }
 
 /** ---------------- Component ---------------- */
-
 export default function Maps() {
   const router = useRouter();
 
@@ -104,23 +116,22 @@ export default function Maps() {
     })
   );
 
-  /** -------- NEW: modal states (split) -------- */
+  /** -------- modal states -------- */
   const [clusterModalVisible, setClusterModalVisible] = useState(false);
   const [singleModalVisible, setSingleModalVisible] = useState(false);
   const [clusterIncidents, setClusterIncidents] = useState<IncidentRow[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<IncidentRow | null>(null);
 
-  /** -------- NEW: auth tracking -------- */
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [stationModalVisible, setStationModalVisible] = useState(false);
+
+  /** -------- auth tracking -------- */
   useEffect(() => {
-    // Initial fetch
     supabase.auth.getUser().then(({ data }) => {
       setSessionUserId(data.user?.id ?? null);
     });
 
-    // Listen for changes
-    const {
-      data: authListener,
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessionUserId(session?.user?.id ?? null);
     });
 
@@ -131,7 +142,7 @@ export default function Maps() {
 
   const isLoggedIn = !!sessionUserId;
 
-  /** -------- main effect -------- */
+  /** -------- location + incidents load -------- */
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -141,12 +152,10 @@ export default function Maps() {
         return;
       }
 
-      // Load incidents
       const { data, error } = await supabase.from('incidents').select('*');
       if (error) console.error('Incidents load error:', error);
       setIncidents((data ?? []) as IncidentRow[]);
 
-      // Get initial position
       const current = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -168,7 +177,6 @@ export default function Maps() {
 
       await refreshAddress(current.coords.latitude, current.coords.longitude);
 
-      // Watch (1s)
       subscriptionRef.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
@@ -190,7 +198,36 @@ export default function Maps() {
     };
   }, []);
 
-  // Feed incidents into supercluster whenever they change
+  /** -------- load stations -------- */
+  const [policeStations, setPoliceStations] = useState<Station[]>([]);
+  const [hospitalStations, setHospitalStations] = useState<Station[]>([]);
+  const [fireStations, setFireStations] = useState<Station[]>([]);
+
+  useEffect(() => {
+    supabase.from('police_stations').select('*').then(({ data, error }) => {
+      if (!error && data) setPoliceStations(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    supabase.from('hospitals').select('*').then(({ data, error }) => {
+      if (!error && data) setHospitalStations(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    supabase.from('fire_stations').select('*').then(({ data, error }) => {
+      if (!error && data) setFireStations(data);
+    });
+  }, []);
+
+  /** -------- scaling for station pins -------- */
+  const zoomLevel = mapRegion ? regionToZoom(mapRegion) : 16;
+  const baseSize = 30;
+  const scaleFactor = Math.max(0.5, Math.min(1, zoomLevel / 18));
+  const pinSize = baseSize * scaleFactor;
+
+  /** -------- incidents into supercluster -------- */
   useEffect(() => {
     const points: ClusterPoint[] = incidents.map((inc) => ({
       type: 'Feature',
@@ -206,7 +243,6 @@ export default function Maps() {
     superclusterRef.current.load(points);
   }, [incidents]);
 
-  // Compute clusters for current map viewport
   const clusters = useMemo(() => {
     if (!mapRegion) return [];
     const bbox: [number, number, number, number] = [
@@ -219,42 +255,7 @@ export default function Maps() {
     return superclusterRef.current.getClusters(bbox, zoom);
   }, [mapRegion, incidents]);
 
-  useEffect(() => {
-    if (activeTab === 'Report') {
-      if (!isLoggedIn) {
-        // Block reporting if not logged in
-        Alert.alert(
-          'Login required',
-          'You need to sign up / log in before you can report an incident.',
-          [
-            {
-              text: 'Go to Sign up',
-              onPress: () => router.push('/(auth)/sign-up/get-started'),
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-        setActiveTab('Map');
-        return;
-      }
-
-      if (liveCoords) {
-        const region: Region = {
-          latitude: liveCoords.latitude,
-          longitude: liveCoords.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        };
-        setSelectedLocation(region);
-        setSelectedLocationName(address);
-        setDeviceLocation({ latitude: liveCoords.latitude, longitude: liveCoords.longitude });
-      }
-      setReportModalVisible(true);
-    } else {
-      setReportModalVisible(false);
-    }
-  }, [activeTab, liveCoords, address, isLoggedIn]);
-
+  /** -------- helpers -------- */
   const refreshAddress = async (lat: number, lng: number) => {
     try {
       const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
@@ -298,7 +299,6 @@ export default function Maps() {
     }
   };
 
-  /** -------- auth actions passed to LocationHeader -------- */
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace('/(auth)/sign-up/get-started');
@@ -308,19 +308,19 @@ export default function Maps() {
     router.push('/(auth)/sign-up/get-started');
   };
 
-  /** -------- cluster/single incident handlers -------- */
-  const zoomToIncident = (inc: IncidentRow, delta = 0.0015) => {
+  const zoomToStation = (station: Station) => {
     mapRef.current?.animateToRegion(
       {
-        latitude: inc.latitude,
-        longitude: inc.longitude,
-        latitudeDelta: delta,
-        longitudeDelta: delta,
+        latitude: station.latitude,
+        longitude: station.longitude,
+        latitudeDelta: 0.0015,
+        longitudeDelta: 0.0015,
       },
       500
     );
   };
 
+  /** -------- incident handlers -------- */
   const handleClusterPress = (clusterId: number) => {
     const leaves = superclusterRef.current.getLeaves(clusterId, Infinity);
     const leafIncidents = leaves.map((l) => (l.properties as ClusterProps).incident);
@@ -331,14 +331,6 @@ export default function Maps() {
   const handleIncidentPress = (inc: IncidentRow) => {
     setSelectedIncident(inc);
     setSingleModalVisible(true);
-    zoomToIncident(inc);
-  };
-
-  const handleSelectIncidentFromCluster = (inc: IncidentRow) => {
-    setClusterModalVisible(false);
-    setSelectedIncident(inc);
-    setSingleModalVisible(true);
-    zoomToIncident(inc);
   };
 
   if (loading || !mapRegion || !userLocation) {
@@ -363,6 +355,58 @@ export default function Maps() {
           showsMyLocationButton={false}
           onRegionChangeComplete={(region) => setMapRegion(region)}
         >
+          {/* Stations */}
+          {policeStations.map((st) => (
+            <Marker
+              key={`police-${st.id}`}
+              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+              onPress={() => {
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            >
+              <Image
+                source={require('~/assets/map-icons/police_dept.png')}
+                style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
+
+                resizeMode="contain"
+              />
+            </Marker>
+          ))}
+          {hospitalStations.map((st) => (
+            <Marker
+              key={`hosp-${st.id}`}
+              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+              onPress={() => {
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            >
+              <Image
+                source={require('~/assets/map-icons/hospital.png')}
+                style={{ width: pinSize, height: pinSize }}
+                resizeMode="contain"
+              />
+            </Marker>
+          ))}
+          {fireStations.map((st) => (
+            <Marker
+              key={`fire-${st.id}`}
+              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+              onPress={() => {
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            >
+              <Image
+                source={require('~/assets/map-icons/fire_dept.png')}
+                style={{ width: pinSize, height: pinSize }}
+                resizeMode="contain"
+              />
+            </Marker>
+          ))}
+
+          {/* User Circle */}
           <Circle
             center={{
               latitude: userLocation.coords.latitude,
@@ -373,6 +417,7 @@ export default function Maps() {
             fillColor="rgba(123, 255, 0, 0.2)"
           />
 
+          {/* Clusters */}
           {clusters.map((c: any) => {
             const [lng, lat] = c.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = c.properties;
@@ -419,7 +464,7 @@ export default function Maps() {
           })}
         </MapView>
 
-        {/* Header with live-updated address + auth menu */}
+        {/* Header */}
         <View className="absolute top-0 w-full z-10">
           <LocationHeader
             street={street}
@@ -432,7 +477,7 @@ export default function Maps() {
           />
         </View>
 
-        {/* Recenter Button */}
+        {/* Recenter */}
         <TouchableOpacity
           className="absolute right-4 bottom-44 bg-white rounded-full w-12 h-12 items-center justify-center shadow"
           onPress={recenterMap}
@@ -445,7 +490,7 @@ export default function Maps() {
           />
         </TouchableOpacity>
 
-        {/* Overlays for other tabs */}
+        {/* Views */}
         {activeTab === 'Police' && (
           <View className="absolute inset-0 bg-white z-20">
             {/* @ts-ignore */}
@@ -474,7 +519,7 @@ export default function Maps() {
           />
         </View>
 
-        {/* Report Modal */}
+        {/* Modals */}
         <ReportIncidentModal
           visible={reportModalVisible}
           onClose={() => {
@@ -486,18 +531,31 @@ export default function Maps() {
           deviceLocation={deviceLocation}
         />
 
-        {/* Cluster & Single modals */}
         <ClusterIncidentsModal
           visible={clusterModalVisible}
           onClose={() => setClusterModalVisible(false)}
           incidents={clusterIncidents}
-          onSelectIncident={handleSelectIncidentFromCluster}
+          onSelectIncident={(inc) => {
+            setClusterModalVisible(false);
+            setSelectedIncident(inc);
+            setSingleModalVisible(true);
+          }}
         />
 
         <IncidentDetailsModal
           visible={singleModalVisible}
           onClose={() => setSingleModalVisible(false)}
           incident={selectedIncident}
+        />
+
+        <StationDetailsModal
+          visible={stationModalVisible}
+          onClose={() => setStationModalVisible(false)}
+          station={selectedStation}
+          onLocate={(st: Station) => { // ✅ explicitly typed parameter
+            zoomToStation(st);
+            setStationModalVisible(false);
+          }}
         />
       </View>
     </>

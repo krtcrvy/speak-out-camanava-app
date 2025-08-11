@@ -17,7 +17,7 @@ AppState.addEventListener('change', (state) => {
   }
 });
 
-export default function NumberOTP() {
+export default function ForgotOTP() {
   const [digits, setDigits] = React.useState(["", "", "", "", "", ""]);
   const inputs = React.useRef<(null | any)[]>([]);
   const [resendTimer, setResendTimer] = React.useState(0);
@@ -29,53 +29,56 @@ export default function NumberOTP() {
   const fullDisplayNumber = phoneNumber ? `+63${phoneNumber}` : '';
 
   const verifyOtp = async (inputOtp: string) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneNumber, code: inputOtp }),
-      });
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneNumber, code: inputOtp }),
+    });
 
-      const result = await response.json();
+    const result = await response.json();
 
-      if (!response.ok || result?.error) {
-        console.error('❌ OTP verification failed:', result?.error || result);
-        setError(true);
-        setDigits(["", "", "", "", "", ""]);
-        inputs.current[0]?.focus();
-        return;
-      }
-
-      if (!result?.token) {
-        console.error('❌ No token returned from verify-otp');
-        setError(true);
-        return;
-      }
-
-      const jwtToken = result.token;
-
-      const { error: loginError } = await supabase.auth.setSession({
-        access_token: jwtToken,
-        refresh_token: jwtToken,
-      });
-
-      if (loginError) {
-        console.error('❌ Supabase login failed:', loginError.message);
-        setError(true);
-        return;
-      }
-
-      console.log('✅ Logged in successfully');
-      router.replace('/(auth)/sign-up/pin-user');
-    } catch (err) {
-      console.error('❌ Network error during OTP verification:', err);
-      setError(true);
+    if (!response.ok) {
+      console.error('❌ Failed to send OTP:', result);
+      return false;
     }
-  };
 
+    if (!response.ok || !result?.token) {
+      console.error('❌ OTP verification failed:', result?.error || result);
+      setError(true);
+      setDigits(["", "", "", "", "", ""]);
+      inputs.current[0]?.focus();
+      return;
+    }
+
+    const jwtToken = result.token;
+
+    const { error: loginError } = await supabase.auth.setSession({
+      access_token: jwtToken,
+      refresh_token: jwtToken, // If you're not using refresh tokens, just set both
+    });
+
+    if (loginError) {
+      console.error('❌ Supabase login failed:', loginError.message);
+      setError(true);
+      return;
+    }
+
+    console.log('✅ Entered new PIN screen successfully');
+
+    router.push({
+      pathname: '/(auth)/sign-up/forgot-pin/new-pin-enter'
+    });
+
+  } catch (err) {
+    console.error('❌ Network error during OTP verification:', err);
+    setError(true);
+  }
+};
+
+  
   const handleChange = async (text: string, idx: number) => {
     if (/^\d?$/.test(text)) {
-      // Reset error styles & messages on input change
       if (error || notFoundError) {
         setError(false);
         setNotFoundError(false);
@@ -153,11 +156,7 @@ export default function NumberOTP() {
                   onChangeText={(text) => handleChange(text, idx)}
                   keyboardType="number-pad"
                   maxLength={1}
-                  className={`flex-1 mx-1 h-16 ${
-                    error || notFoundError
-                      ? 'border-red-500 bg-red-50'
-                      : 'border-gray-300'
-                  }`}
+                  className={`flex-1 mx-1 h-16 ${error || notFoundError ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                   style={{ minWidth: 0 }}
                   returnKeyType={idx === digits.length - 1 ? 'done' : 'next'}
                 />
@@ -172,7 +171,7 @@ export default function NumberOTP() {
               </Text>
             )}
 
-            <Note className="w-90">
+            <Note className='w-90'>
               Kindly wait for at least 3 minutes for the OTP to arrive
             </Note>
 

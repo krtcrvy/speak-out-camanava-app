@@ -2,10 +2,11 @@ import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Text,
   TouchableOpacity,
+  Modal,
+  Vibration,
   View,
 } from 'react-native';
 import MapView, {
@@ -38,8 +39,6 @@ import {
   IncidentDetailsModal,
   type IncidentRow,
 } from '~/components/ui/maps/incident-modals';
-
-
 
 /** ---------------- Types ---------------- */
 interface ClusterProps {
@@ -178,17 +177,36 @@ export default function Maps() {
       await refreshAddress(current.coords.latitude, current.coords.longitude);
 
       subscriptionRef.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 1000,
-          distanceInterval: 1,
-        },
-        async (loc) => {
-          setUserLocation(loc);
-          setLiveCoords(loc.coords);
-          await refreshAddress(loc.coords.latitude, loc.coords.longitude);
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 1000,
+        distanceInterval: 1,
+      },
+      async (loc) => {
+        setUserLocation(loc);
+        setLiveCoords(loc.coords);
+        await refreshAddress(loc.coords.latitude, loc.coords.longitude);
+
+        // 🔹 Collision detection with incidents
+        const userLat = loc.coords.latitude;
+        const userLng = loc.coords.longitude;
+
+        const incidentTouch = incidents.some(inc => {
+          const dist = getDistanceFromLatLonInMeters(
+            userLat,
+            userLng,
+            inc.latitude,
+            inc.longitude
+          );
+          return dist <= 60; // green circle radius
+        });
+
+        if (incidentTouch) {
+          Vibration.vibrate(); // or await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setTouchModalVisible(true);
         }
-      );
+      }
+    );
 
       setLoading(false);
     })();
@@ -342,6 +360,23 @@ export default function Maps() {
     );
   }
 
+  /** -------- haversine formula -------- */
+  const [touchModalVisible, setTouchModalVisible] = useState(false);
+
+  function getDistanceFromLatLonInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371000; // radius of Earth in meters
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // distance in meters
+  }
+
   return (
     <>
       <Stack.Screen options={{ title: 'Maps', headerShown: false }} />
@@ -368,7 +403,6 @@ export default function Maps() {
               <Image
                 source={require('~/assets/map-icons/police_dept.png')}
                 style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
-
                 resizeMode="contain"
               />
             </Marker>
@@ -464,6 +498,26 @@ export default function Maps() {
           })}
         </MapView>
 
+        <Modal
+          transparent
+          visible={touchModalVisible}
+          animationType="fade"
+          onRequestClose={() => setTouchModalVisible(false)}
+        >
+          <View className="flex-1 justify-center items-center bg-black/50">
+            <View className="bg-white p-6 rounded-lg">
+              <Text className="text-lg font-bold text-center">True</Text>
+              <TouchableOpacity
+                onPress={() => setTouchModalVisible(false)}
+                style={{ marginTop: 10 }}
+              >
+                <Text style={{ color: 'blue', textAlign: 'center' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+
         {/* Header */}
         <View className="absolute top-0 w-full z-10">
           <LocationHeader
@@ -473,7 +527,10 @@ export default function Maps() {
             uid={sessionUserId ?? undefined}
             onLogout={handleLogout}
             onSignup={handleSignup}
-            onSelectIncident={handleIncidentPress}
+            onSelectIncident={(inc) => {
+              setSelectedIncident(inc);
+              setSingleModalVisible(true);
+            }}
           />
         </View>
 
@@ -490,7 +547,6 @@ export default function Maps() {
           />
         </TouchableOpacity>
 
-        {/* Views */}
         {activeTab === 'Police' && (
           <View className="absolute inset-0 bg-white z-20">
             {/* @ts-ignore */}
@@ -514,11 +570,18 @@ export default function Maps() {
         <View className="absolute bottom-0 w-full z-30">
           <BottomSheet
             activeTab={activeTab}
-            onTabPress={setActiveTab}
+            onTabPress={(tab) => {
+              if (tab === 'Report') {
+                setReportModalVisible(true);
+                setActiveTab('Map');
+              } else {
+                setActiveTab(tab);
+              }
+            }}
             className="shadow-lg"
           />
         </View>
-
+        
         {/* Modals */}
         <ReportIncidentModal
           visible={reportModalVisible}
@@ -552,7 +615,7 @@ export default function Maps() {
           visible={stationModalVisible}
           onClose={() => setStationModalVisible(false)}
           station={selectedStation}
-          onLocate={(st: Station) => { // ✅ explicitly typed parameter
+          onLocate={(st: Station) => {
             zoomToStation(st);
             setStationModalVisible(false);
           }}

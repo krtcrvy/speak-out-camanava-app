@@ -9,36 +9,11 @@ import * as React from 'react';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
 
-const sendOtp = async (number: string) => {
-  try {
-    const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ phone: number }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Failed to send OTP:', result);
-      return false;
-    }
-
-    console.log(`✅ OTP sent to ${number}`);
-    return true;
-  } catch (err) {
-    console.error('❌ Error sending OTP:', err);
-    return false;
-  }
-};
-
 export default function SwitchAccounts() {
   const [phoneNumber, setPhoneNumber] = React.useState('');
   const [showError, setShowError] = React.useState(false);
   const [notFoundError, setNotFoundError] = React.useState(false);
-  const [loading, setLoading] = React.useState(false); // ✅ Loading state
+  const [loading, setLoading] = React.useState(false);
   const router = useRouter();
 
   const handleInputChange = (input: string) => {
@@ -77,20 +52,37 @@ export default function SwitchAccounts() {
       return;
     }
 
-    const otpSent = await sendOtp(phoneNumber);
-    if (!otpSent) {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: String(phoneNumber) }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setNotFoundError(true);
+        } else {
+          setShowError(true);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // ✅ OTP sent successfully
+      router.push({
+        pathname: '/(auth)/sign-up/number-otp',
+        params: { phoneNumber },
+      });
+      setPhoneNumber('');
+    } catch (err) {
+      console.error('❌ Error sending OTP:', err);
       setShowError(true);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push({
-      pathname: '/(auth)/sign-up/number-otp',
-      params: { phoneNumber },
-    });
-
-    setPhoneNumber('');
-    setLoading(false);
   };
 
   return (
@@ -131,13 +123,15 @@ export default function SwitchAccounts() {
           <Button
             variant="green"
             size="pill"
-            disabled={phoneNumber.length !== 10 || loading} // ✅ Disable when loading
+            disabled={phoneNumber.length !== 10 || loading}
             onPress={handleConfirm}
           >
-            {loading ? ( // ✅ Show spinner when loading
+            {loading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text className="font-poppins-semibold text-white">Confirm Number</Text>
+              <Text className="font-poppins-semibold text-white">
+                Confirm Number
+              </Text>
             )}
           </Button>
         </View>

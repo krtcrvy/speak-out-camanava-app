@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { supabase } from '~/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { IncidentRow } from '~/components/ui/maps/incident-modals';
 
 interface LocationHeaderProps {
@@ -18,7 +19,7 @@ interface LocationHeaderProps {
   address: string;
   isLoggedIn: boolean;
   uid?: string;
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
   onSignup?: () => void;
   onSelectIncident?: (incident: IncidentRow) => void;
 }
@@ -37,11 +38,57 @@ export default function LocationHeader({
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [streetState, setStreetState] = useState<string>(street || 'Fetching street...');
+  const [formattedAddress, setFormattedAddress] = useState<string>(address || 'Fetching address...');
+
+  useEffect(() => {
+    fetchLocation();
+  }, []);
+
   useEffect(() => {
     if (settingsVisible && uid) {
       fetchUserIncidents();
     }
   }, [settingsVisible, uid]);
+
+  const fetchLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setStreetState('Permission denied');
+        setFormattedAddress('Unable to fetch location');
+        return;
+      }
+      const { coords } = await Location.getCurrentPositionAsync({});
+      formatAddressFromCoords(coords.latitude, coords.longitude);
+    } catch (err) {
+      console.error('Error fetching location:', err);
+      setFormattedAddress('Unable to fetch location');
+    }
+  };
+
+  const formatAddressFromCoords = async (lat: number, lng: number) => {
+    try {
+      const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (geocodes.length > 0) {
+        const p = geocodes[0];
+        const cityName = p.city || p.subregion || 'CAMANAVA';
+        const formatted = [
+          `${p.name || ''} ${p.street || 'Unknown Street'}`.trim(),
+          cityName,
+          'Metro Manila',
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        setStreetState(p.street || 'Unknown Street');
+        setFormattedAddress(formatted);
+      }
+    } catch (err) {
+      console.error('reverseGeocode error:', err);
+      setFormattedAddress('Unable to format address');
+    }
+  };
 
   const fetchUserIncidents = async () => {
     setLoading(true);
@@ -57,7 +104,6 @@ export default function LocationHeader({
     } else {
       console.error('Failed to fetch incidents:', error);
     }
-
     setLoading(false);
   };
 
@@ -74,10 +120,10 @@ export default function LocationHeader({
         <View className="flex-1">
           <Text className="text-xs text-gray-500">Your Current Location</Text>
           <Text className="text-sm font-bold text-green-600">
-            {street || 'Current street'}
+            {streetState}
           </Text>
           <Text className="text-xs text-gray-600" numberOfLines={1}>
-            {address}
+            {formattedAddress}
           </Text>
         </View>
       </View>

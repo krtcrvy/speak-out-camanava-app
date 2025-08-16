@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
+import Animated, { FadeInUp, FadeOutDown } from 'react-native-reanimated';
 import { supabase } from '~/utils/supabase';
 
 const EMOJIS = ['🦺', '🚧', '🚨', '👮', '🛑', '⚠️'];
@@ -47,8 +48,8 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   const [tempPickRegion, setTempPickRegion] = useState<Region>({
     latitude: defaultLatLng.latitude,
     longitude: defaultLatLng.longitude,
-    latitudeDelta: 0.005,
-    longitudeDelta: 0.005,
+    latitudeDelta: 0.002,
+    longitudeDelta: 0.002,
   });
 
   const [isSafetyTip, setIsSafetyTip] = useState(false);
@@ -159,167 +160,187 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-center items-center bg-black/40 px-4">
-        <View className="w-full max-w-md bg-white rounded-2xl p-5 max-h-[90%]">
+        <Animated.View
+          entering={FadeInUp}
+          exiting={FadeOutDown}
+          className="w-full max-w-md bg-white rounded-2xl p-5 max-h-[90%]"
+        >
           {/* Header */}
           <View className="flex-row justify-between mb-6 items-center">
             <Text className="text-xl font-poppins-bold">
               {isSafetyTip ? 'Post a Safety Tip' : 'Report an Incident'}
             </Text>
-            <TouchableOpacity onPress={() => setIsSafetyTip(!isSafetyTip)}>
+            <TouchableOpacity
+              onPress={() => {
+                if (picking) setPicking(false); // close map if open
+                setIsSafetyTip(!isSafetyTip);
+              }}
+            >
               <Text className="text-green-600 font-poppins-semibold text-sm">
                 {isSafetyTip ? 'Switch to Incident' : 'Switch to Tip'}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 12 }}
-          >
-            {/* Location Display */}
-            <View className="mb-4">
-              <Text className="text-sm text-gray-600 font-poppins-regular mb-1">Location:</Text>
-              <Text className="text-base font-poppins-semibold text-green-600">
-                {displayLocationName}
-              </Text>
-              {!picking && (
-                <TouchableOpacity
-                  className="self-center mt-2 px-3 py-2 rounded-3xl bg-gray-100"
-                  onPress={() => setPicking(true)}
-                >
-                  <Text className="text-gray-800 font-poppins-medium text-sm">
-                    Change location
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {picking && (
-              <>
-                <View className="h-80 w-full mb-4 rounded-lg overflow-hidden">
-                  <MapView
-                    provider={PROVIDER_GOOGLE}
-                    style={{ flex: 1 }}
-                    initialRegion={tempPickRegion}
-                    onRegionChangeComplete={(region) => {
-                      setTempPickRegion(region);
-                      formatAddressFromCoords(region.latitude, region.longitude);
-                    }}
-                  />
-                  <View className="absolute inset-0 justify-center items-center pointer-events-none">
-                    <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
-                  </View>
-                </View>
-                <View className="flex-row justify-between mb-4">
-                  <TouchableOpacity
-                    className="bg-gray-300 px-4 py-2 rounded-lg w-[48%] items-center"
-                    onPress={() => setPicking(false)}
-                  >
-                    <Text className="font-poppins-medium text-gray-800">Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="bg-green-500 px-4 py-2 rounded-lg w-[48%] items-center"
-                    onPress={() => {
-                      setReportLatLng({
-                        latitude: tempPickRegion.latitude,
-                        longitude: tempPickRegion.longitude,
-                      });
-                      setPicking(false);
-                    }}
-                  >
-                    <Text className="font-poppins-medium text-white">Confirm</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {!isSafetyTip && (
-              <View
-                className={`border rounded-lg mb-4 p-3 ${
-                  showValidationError && !incidentType ? 'border-red-500' : 'border-gray-300'
-                }`}
+          {/* Address always visible */}
+          <View className="mb-4">
+            <Text className="text-sm text-gray-600 font-poppins-regular mb-1">Location:</Text>
+            <Text className="text-base font-poppins-semibold text-green-600">
+              {displayLocationName}
+            </Text>
+            {!picking && (
+              <TouchableOpacity
+                className="self-center mt-2 px-3 py-2 rounded-3xl bg-gray-100"
+                onPress={() => {
+                setTempPickRegion({
+                  latitude: reportLatLng.latitude,
+                  longitude: reportLatLng.longitude,
+                  latitudeDelta: 0.0005,
+                  longitudeDelta: 0.0005,
+                });
+                  setPicking(true);
+                }}
               >
-                <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">
-                  Type of Incident
-                </Text>
-                {['Theft', 'Sexual Crime', 'Disorderly Conduct'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    className="py-2"
-                    onPress={() => {
-                      setIncidentType(type);
-                      setShowValidationError(false);
-                    }}
-                  >
-                    <Text
-                      className={`font-poppins-regular ${
-                        incidentType === type ? 'text-green-600' : 'text-gray-800'
-                      }`}
-                    >
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                <Text className="text-gray-800 font-poppins-medium text-sm">Change location</Text>
+              </TouchableOpacity>
             )}
+          </View>
 
-            <TextInput
-              placeholder="Enter a detailed description (min 10 characters)"
-              multiline
-              className="border border-gray-300 rounded-lg p-3 text-sm mb-4"
-              value={description}
-              onChangeText={(text) => {
-                setDescription(text);
-                setShowValidationError(false);
-              }}
-              maxLength={500}
-            />
-
-            {isSafetyTip && (
-              <View className="mb-4">
-                <Text className="text-sm font-poppins-regular text-gray-700 mb-1">
-                  Select an emoji that best represents your tip:
-                </Text>
-                <View className="flex-row justify-between">
-                  {EMOJIS.map((emoji) => (
+          {picking ? (
+            <>
+              <View className="h-80 w-full mb-4 rounded-lg overflow-hidden">
+              <MapView
+                provider={PROVIDER_GOOGLE}
+                style={{ flex: 1 }}
+                region={tempPickRegion} // just pass the whole region object
+                onRegionChangeComplete={(region) => {
+                  setTempPickRegion(region); // ✅ save whole region, including deltas
+                  formatAddressFromCoords(region.latitude, region.longitude);
+                }}
+              />
+              <View className="absolute inset-0 justify-center items-center pointer-events-none">
+                <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
+              </View>
+            </View>
+              <View className="flex-row justify-between mb-4">
+                <TouchableOpacity
+                  className="bg-gray-300 px-4 py-2 rounded-lg w-[48%] items-center"
+                  onPress={() => setPicking(false)}
+                >
+                  <Text className="font-poppins-medium text-gray-800">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="bg-green-500 px-4 py-2 rounded-lg w-[48%] items-center"
+                  onPress={() => {
+                    setReportLatLng({
+                      latitude: tempPickRegion.latitude,
+                      longitude: tempPickRegion.longitude,
+                    });
+                    setPicking(false);
+                  }}
+                >
+                  <Text className="font-poppins-medium text-white">Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 12 }}
+            >
+              {!isSafetyTip && (
+                <View
+                  className={`border rounded-lg mb-4 p-3 ${
+                    showValidationError && !incidentType ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                >
+                  <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">
+                    Type of Incident
+                  </Text>
+                  {['Theft', 'Sexual Crime', 'Disorderly Conduct'].map((type) => (
                     <TouchableOpacity
-                      key={emoji}
-                      className={`px-3 py-2 rounded-xl ${
-                        selectedEmoji === emoji ? 'bg-green-200' : 'bg-gray-100'
-                      }`}
-                      onPress={() => setSelectedEmoji(emoji)}
+                      key={type}
+                      className="py-2"
+                      onPress={() => {
+                        setIncidentType(type);
+                        setShowValidationError(false);
+                      }}
                     >
-                      <Text className="text-xl">{emoji}</Text>
+                      <Text
+                        className={`font-poppins-regular ${
+                          incidentType === type ? 'text-green-600' : 'text-gray-800'
+                        }`}
+                      >
+                        {type}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* Submit Button */}
-            <TouchableOpacity
-              className={`rounded-lg py-4 items-center mt-3 ${
-                loading ? 'bg-gray-400' : 'bg-green-500'
-              }`}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-white font-poppins-semibold text-lg">
-                  {isSafetyTip ? 'POST TIP' : 'SUBMIT REPORT'}
+              <TextInput
+                placeholder="Enter a detailed description (min 10 characters)"
+                multiline
+                className="border border-gray-300 rounded-lg p-3 text-sm mb-4"
+                value={description}
+                onChangeText={(text) => {
+                  setDescription(text);
+                  setShowValidationError(false);
+                }}
+                maxLength={500}
+              />
+
+              {isSafetyTip && (
+                <View className="mb-4">
+                  <Text className="text-sm font-poppins-regular text-gray-700 mb-1">
+                    Select an emoji that best represents your tip:
+                  </Text>
+                  <View className="flex-row justify-between">
+                    {EMOJIS.map((emoji) => (
+                      <TouchableOpacity
+                        key={emoji}
+                        className={`px-3 py-2 rounded-xl ${
+                          selectedEmoji === emoji ? 'bg-green-200' : 'bg-gray-100'
+                        }`}
+                        onPress={() => setSelectedEmoji(emoji)}
+                      >
+                        <Text className="text-xl">{emoji}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Submit */}
+              <TouchableOpacity
+                className={`rounded-lg py-4 items-center mt-3 ${
+                  loading ? 'bg-gray-400' : 'bg-green-500'
+                }`}
+                onPress={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-white font-poppins-semibold text-lg">
+                    {isSafetyTip ? 'POST TIP' : 'SUBMIT REPORT'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Back button */}
+              <TouchableOpacity className="mt-3 items-center" onPress={onClose}>
+                <Text className="text-green-600 font-poppins-semibold text-base">Back</Text>
+              </TouchableOpacity>
+
+              {showValidationError && (
+                <Text className="self-center text-red-600 text-sm font-medium mt-1">
+                  Please complete all required fields!
                 </Text>
               )}
-            </TouchableOpacity>
-
-            {showValidationError && (
-              <Text className="self-center text-red-600 text-sm font-medium mt-1">
-                Please complete all required fields!
-              </Text>
-            )}
-          </ScrollView>
-        </View>
+            </ScrollView>
+          )}
+        </Animated.View>
       </View>
     </Modal>
   );

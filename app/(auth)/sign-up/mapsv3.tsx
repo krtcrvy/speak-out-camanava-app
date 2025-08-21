@@ -5,7 +5,6 @@ import {
   Image,
   Text,
   TouchableOpacity,
-  Modal,
   Vibration,
   View,
 } from 'react-native';
@@ -61,16 +60,6 @@ interface Station {
 }
 
 /** ---------------- Utils ---------------- */
-function getCityFromCoordinates(
-  lat: number,
-  lng: number
-): 'Malabon' | 'Navotas' | 'Caloocan' | 'Valenzuela' {
-  if (lat >= 14.65 && lat <= 14.74 && lng >= 120.93 && lng <= 121.01) return 'Malabon';
-  if (lat >= 14.64 && lat <= 14.77 && lng >= 120.9 && lng <= 120.97) return 'Navotas';
-  if (lat >= 14.68 && lat <= 14.75 && lng >= 120.95 && lng <= 121.12) return 'Valenzuela';
-  return 'Caloocan';
-}
-
 function regionToZoom(region: Region): number {
   const angle = region.longitudeDelta;
   return Math.round(Math.log(360 / angle) / Math.LN2);
@@ -174,40 +163,6 @@ export default function Maps() {
       };
       setMapRegion(initialRegion);
 
-      await refreshAddress(current.coords.latitude, current.coords.longitude);
-
-      subscriptionRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 1000,
-        distanceInterval: 1,
-      },
-      async (loc) => {
-        setUserLocation(loc);
-        setLiveCoords(loc.coords);
-        await refreshAddress(loc.coords.latitude, loc.coords.longitude);
-
-        // 🔹 Collision detection with incidents
-        const userLat = loc.coords.latitude;
-        const userLng = loc.coords.longitude;
-
-        const incidentTouch = incidents.some(inc => {
-          const dist = getDistanceFromLatLonInMeters(
-            userLat,
-            userLng,
-            inc.latitude,
-            inc.longitude
-          );
-          return dist <= 60; // green circle radius
-        });
-
-        if (incidentTouch) {
-          Vibration.vibrate(); // or await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          setTouchModalVisible(true);
-        }
-      }
-    );
-
       setLoading(false);
     })();
 
@@ -273,37 +228,6 @@ export default function Maps() {
     return superclusterRef.current.getClusters(bbox, zoom);
   }, [mapRegion, incidents]);
 
-  /** -------- helpers -------- */
-  const refreshAddress = async (lat: number, lng: number) => {
-    try {
-      const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      const guessCity = getCityFromCoordinates(lat, lng);
-      setCity(guessCity);
-
-      if (geocodes.length > 0) {
-        const p = geocodes[0];
-        const streetNumber = p.name || '';
-        const streetName = p.street || 'Unknown Street';
-
-        const formatted = [
-          `${streetNumber} ${streetName}`.trim(),
-          guessCity ? `${guessCity}` : '',
-          'Metro Manila',
-        ]
-          .filter(Boolean)
-          .join(', ');
-
-        setStreet(`${streetNumber} ${streetName}`.trim());
-        setAddress(formatted);
-      } else {
-        setStreet('Unknown Street');
-        setAddress(`${guessCity}, Metro Manila`);
-      }
-    } catch (err) {
-      console.error('reverseGeocode error:', err);
-    }
-  };
-
   const recenterMap = () => {
     if (userLocation && mapRef.current) {
       const { latitude, longitude } = userLocation.coords;
@@ -358,23 +282,6 @@ export default function Maps() {
         <Text className="mt-3 text-base text-gray-700">Fetching your location...</Text>
       </View>
     );
-  }
-
-  /** -------- haversine formula -------- */
-  const [touchModalVisible, setTouchModalVisible] = useState(false);
-
-  function getDistanceFromLatLonInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-    const R = 6371000; // radius of Earth in meters
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // distance in meters
   }
 
   return (
@@ -497,26 +404,6 @@ export default function Maps() {
             );
           })}
         </MapView>
-
-        <Modal
-          transparent
-          visible={touchModalVisible}
-          animationType="fade"
-          onRequestClose={() => setTouchModalVisible(false)}
-        >
-          <View className="flex-1 justify-center items-center bg-black/50">
-            <View className="bg-white p-6 rounded-lg">
-              <Text className="text-lg font-bold text-center">True</Text>
-              <TouchableOpacity
-                onPress={() => setTouchModalVisible(false)}
-                style={{ marginTop: 10 }}
-              >
-                <Text style={{ color: 'blue', textAlign: 'center' }}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
 
         {/* Header */}
         <View className="absolute top-0 w-full z-10">

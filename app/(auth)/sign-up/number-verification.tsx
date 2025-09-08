@@ -203,7 +203,7 @@ export default function NumberVerification() {
     if (resendTimer > 0) return;
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
+      const response = await fetch(`${BACKEND_URL}/api/signup-send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: contactNo }),
@@ -297,10 +297,10 @@ export default function NumberVerification() {
                   <Text className="text-red-500 text-sm font-medium text-center">
                     ❌ OTP is incorrect or expired! Please try again.
                   </Text>
-                )}
+                )}-
 
                 <Note className="w-90">
-                  Kindly wait for at least 1 minute for the OTP to arrive
+                  Kindly wait for at least 10 minutes for the OTP to arrive
                 </Note>
 
                 {resendTimer > 0 ? (

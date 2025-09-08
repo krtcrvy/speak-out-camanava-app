@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { supabase } from '~/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { IncidentRow } from '~/components/ui/maps/incident-modals';
 
 interface LocationHeaderProps {
@@ -38,57 +37,11 @@ export default function LocationHeader({
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const [streetState, setStreetState] = useState<string>(street || 'Fetching street...');
-  const [formattedAddress, setFormattedAddress] = useState<string>(address || 'Fetching address...');
-
-  useEffect(() => {
-    fetchLocation();
-  }, []);
-
   useEffect(() => {
     if (settingsVisible && uid) {
       fetchUserIncidents();
     }
   }, [settingsVisible, uid]);
-
-  const fetchLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setStreetState('Permission denied');
-        setFormattedAddress('Unable to fetch location');
-        return;
-      }
-      const { coords } = await Location.getCurrentPositionAsync({});
-      formatAddressFromCoords(coords.latitude, coords.longitude);
-    } catch (err) {
-      console.error('Error fetching location:', err);
-      setFormattedAddress('Unable to fetch location');
-    }
-  };
-
-  const formatAddressFromCoords = async (lat: number, lng: number) => {
-    try {
-      const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      if (geocodes.length > 0) {
-        const p = geocodes[0];
-        const cityName = p.city || p.subregion || 'CAMANAVA';
-        const formatted = [
-          `${p.name || ''} ${p.street || 'Unknown Street'}`.trim(),
-          cityName,
-          'Metro Manila',
-        ]
-          .filter(Boolean)
-          .join(', ');
-
-        setStreetState(p.street || 'Unknown Street');
-        setFormattedAddress(formatted);
-      }
-    } catch (err) {
-      console.error('reverseGeocode error:', err);
-      setFormattedAddress('Unable to format address');
-    }
-  };
 
   const fetchUserIncidents = async () => {
     setLoading(true);
@@ -120,10 +73,10 @@ export default function LocationHeader({
         <View className="flex-1">
           <Text className="text-xs text-gray-500">Your Current Location</Text>
           <Text className="text-sm font-bold text-green-600">
-            {streetState}
+            {street}
           </Text>
           <Text className="text-xs text-gray-600" numberOfLines={1}>
-            {formattedAddress}
+            {address}
           </Text>
         </View>
       </View>
@@ -157,7 +110,7 @@ export default function LocationHeader({
                 setSettingsVisible(true);
               }}
             >
-              <Text className="text-gray-800 text-base">Settings</Text>
+              <Text className="text-gray-800 text-base">Reported Incidents</Text>
             </TouchableOpacity>
             <View className="border-t border-gray-100 my-2" />
             <TouchableOpacity

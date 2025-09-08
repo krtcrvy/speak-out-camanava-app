@@ -84,7 +84,7 @@ export default function PersonalInfo() {
 
   const sendOtp = async (phone: string) => {
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/send-otp`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/signup-send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),

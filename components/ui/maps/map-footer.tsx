@@ -2,7 +2,7 @@ import * as React from 'react';
 import { View, Text, TouchableOpacity, Animated, Image } from 'react-native';
 import { cn } from '~/lib/utils';
 
-type BottomSheetTab = 'Map' | 'Police' | 'Report' | 'SOS' | 'Hospitals' | 'Fire';
+type BottomSheetTab = 'Map' | 'Police' | 'Report' | 'Call' | 'Hospitals' | 'Fire';
 
 interface BottomSheetProps {
   activeTab: BottomSheetTab;
@@ -19,7 +19,7 @@ interface TabItemProps {
 const iconMap: Record<BottomSheetTab, any> = {
   Map: require('~/assets/map-icons/map.png'),
   Report: require('~/assets/map-icons/report.png'),
-  SOS: require('~/assets/map-icons/call.png'),
+  Call: require('~/assets/map-icons/call.png'),
   Police: require('~/assets/map-icons/police_dept.png'),
   Hospitals: require('~/assets/map-icons/hospital.png'),
   Fire: require('~/assets/map-icons/fire_dept.png'),
@@ -90,7 +90,7 @@ TabItem.displayName = 'TabItem';
 
 const BottomSheet = React.forwardRef<View, BottomSheetProps>(
   ({ activeTab, onTabPress, className }, ref) => {
-    const tabs: BottomSheetTab[] = ['Map', 'Report', 'SOS', 'Police', 'Hospitals', 'Fire'];
+    const tabs: BottomSheetTab[] = ['Map', 'Report', 'Call', 'Police', 'Hospitals', 'Fire'];
 
     return (
       <View

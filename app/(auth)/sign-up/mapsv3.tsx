@@ -5,7 +5,6 @@ import {
   Image,
   Text,
   TouchableOpacity,
-  Vibration,
   View,
 } from 'react-native';
 import MapView, {
@@ -26,11 +25,13 @@ import type { Feature, Point } from 'geojson';
 
 import { BottomSheet, BottomSheetTab } from '~/components/ui/maps/map-footer';
 import LocationHeader from '~/components/ui/maps/location-header';
+import { formatAddress, ExtendedGeocodedAddress } from "~/utils/formatAddress";
 import PoliceView from '~/components/ui/maps/police';
 import HospitalView from '~/components/ui/maps/hospital';
 import FireView from '~/components/ui/maps/fire';
 import StationDetailsModal from '~/components/ui/maps/station-details-modal';
 import { ReportIncidentModal } from '~/components/ui/maps/report-incident-modal';
+import { CallModal } from '~/components/ui/maps/call-modal';
 import { supabase } from '~/utils/supabase';
 
 import {
@@ -74,25 +75,32 @@ export default function Maps() {
   const [userLocation, setUserLocation] = useState<LocationObject | null>(null);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
 
+  // 🟢 reverse-geocoded info
   const [street, setStreet] = useState('Fetching…');
   const [address, setAddress] = useState('Fetching location…');
-  const [city, setCity] = useState<'Malabon' | 'Navotas' | 'Caloocan' | 'Valenzuela'>('Caloocan');
+  const [city, setCity] = useState<string>('None');
   const [loading, setLoading] = useState(true);
 
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
 
   const mapRef = useRef<MapView>(null);
+  const isProgrammaticMove = useRef(false); // 🟢 new flag
 
   // Report modal / location picking
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Region | null>(null);
   const [selectedLocationName, setSelectedLocationName] = useState<string>('');
-  const [deviceLocation, setDeviceLocation] = useState<{ latitude: number; longitude: number }>({
+  const [deviceLocation, setDeviceLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  }>({
     latitude: 0,
     longitude: 0,
   });
 
-  const [liveCoords, setLiveCoords] = useState<LocationObjectCoords | null>(null);
+  const [liveCoords, setLiveCoords] = useState<LocationObjectCoords | null>(
+    null
+  );
   const subscriptionRef = useRef<LocationSubscription | null>(null);
 
   /** -------- incidents + supercluster -------- */
@@ -108,7 +116,11 @@ export default function Maps() {
   const [clusterModalVisible, setClusterModalVisible] = useState(false);
   const [singleModalVisible, setSingleModalVisible] = useState(false);
   const [clusterIncidents, setClusterIncidents] = useState<IncidentRow[]>([]);
-  const [selectedIncident, setSelectedIncident] = useState<IncidentRow | null>(null);
+  const [selectedIncident, setSelectedIncident] = useState<IncidentRow | null>(
+    null
+  );
+
+  const [callModalVisible, setCallModalVisible] = useState(false);
 
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [stationModalVisible, setStationModalVisible] = useState(false);
@@ -119,9 +131,11 @@ export default function Maps() {
       setSessionUserId(data.user?.id ?? null);
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSessionUserId(session?.user?.id ?? null);
-    });
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSessionUserId(session?.user?.id ?? null);
+      }
+    );
 
     return () => {
       authListener.subscription.unsubscribe();
@@ -170,6 +184,32 @@ export default function Maps() {
       subscriptionRef.current?.remove();
     };
   }, []);
+
+  /** 🟢 Reverse-geocode when liveCoords change */
+  useEffect(() => {
+    if (liveCoords) {
+      (async () => {
+        try {
+          const geocodes = await Location.reverseGeocodeAsync({
+            latitude: liveCoords.latitude,
+            longitude: liveCoords.longitude,
+          });
+          if (geocodes.length > 0) {
+            const { formatted, city, street } = formatAddress(
+              geocodes[0] as ExtendedGeocodedAddress
+            );
+            setStreet(street);
+            setAddress(formatted);
+            setCity(city as any);
+          }
+        } catch (err) {
+          console.error('reverseGeocode error:', err);
+          setStreet('Unknown Street');
+          setAddress('Unable to fetch address');
+        }
+      })();
+    }
+  }, [liveCoords]);
 
   /** -------- load stations -------- */
   const [policeStations, setPoliceStations] = useState<Station[]>([]);
@@ -237,6 +277,7 @@ export default function Maps() {
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
       };
+      isProgrammaticMove.current = true;
       mapRef.current.animateToRegion(region, 1000);
     }
   };
@@ -251,6 +292,7 @@ export default function Maps() {
   };
 
   const zoomToStation = (station: Station) => {
+    isProgrammaticMove.current = true;
     mapRef.current?.animateToRegion(
       {
         latitude: station.latitude,
@@ -262,24 +304,49 @@ export default function Maps() {
     );
   };
 
-  /** -------- incident handlers -------- */
+  const closeAllModals = () => {
+    setClusterModalVisible(false);
+    setSingleModalVisible(false);
+    setStationModalVisible(false);
+    setReportModalVisible(false);
+  };
+
   const handleClusterPress = (clusterId: number) => {
+    closeAllModals();
     const leaves = superclusterRef.current.getLeaves(clusterId, Infinity);
-    const leafIncidents = leaves.map((l) => (l.properties as ClusterProps).incident);
+    const leafIncidents = leaves.map(
+      (l) => (l.properties as ClusterProps).incident
+    );
     setClusterIncidents(leafIncidents);
     setClusterModalVisible(true);
+
+    isProgrammaticMove.current = true; // don't auto-close modal
   };
 
   const handleIncidentPress = (inc: IncidentRow) => {
+    closeAllModals();
     setSelectedIncident(inc);
     setSingleModalVisible(true);
+
+    isProgrammaticMove.current = true;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: inc.latitude,
+        longitude: inc.longitude,
+        latitudeDelta: 0.0015,
+        longitudeDelta: 0.0015,
+      },
+      500
+    );
   };
 
   if (loading || !mapRegion || !userLocation) {
     return (
       <View className="flex-1 items-center justify-center bg-white">
         <ActivityIndicator size="large" color="#4CAF50" />
-        <Text className="mt-3 text-base text-gray-700">Fetching your location...</Text>
+        <Text className="mt-3 text-base text-gray-700">
+          Fetching your location...
+        </Text>
       </View>
     );
   }
@@ -295,57 +362,89 @@ export default function Maps() {
           provider={PROVIDER_GOOGLE}
           showsUserLocation
           showsMyLocationButton={false}
-          onRegionChangeComplete={(region) => setMapRegion(region)}
+          onRegionChangeComplete={(region) => {
+          setMapRegion(region);
+          if (isProgrammaticMove.current) {
+            setTimeout(() => {
+              isProgrammaticMove.current = false;
+            }, 300);
+          } else {
+            closeAllModals();
+          }
+        }}
         >
           {/* Stations */}
-          {policeStations.map((st) => (
-            <Marker
-              key={`police-${st.id}`}
-              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-              onPress={() => {
-                setSelectedStation(st);
-                setStationModalVisible(true);
-              }}
-            >
-              <Image
-                source={require('~/assets/map-icons/police_dept.png')}
-                style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
-                resizeMode="contain"
-              />
-            </Marker>
-          ))}
-          {hospitalStations.map((st) => (
-            <Marker
-              key={`hosp-${st.id}`}
-              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-              onPress={() => {
-                setSelectedStation(st);
-                setStationModalVisible(true);
-              }}
-            >
-              <Image
-                source={require('~/assets/map-icons/hospital.png')}
-                style={{ width: pinSize, height: pinSize }}
-                resizeMode="contain"
-              />
-            </Marker>
-          ))}
-          {fireStations.map((st) => (
-            <Marker
-              key={`fire-${st.id}`}
-              coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-              onPress={() => {
-                setSelectedStation(st);
-                setStationModalVisible(true);
-              }}
-            >
-              <Image
-                source={require('~/assets/map-icons/fire_dept.png')}
-                style={{ width: pinSize, height: pinSize }}
-                resizeMode="contain"
-              />
-            </Marker>
-          ))}
+          {policeStations.map((st) => {
+            if (!st.latitude || !st.longitude) {
+              console.warn("Invalid police station coordinates", st);
+              return null;
+            }
+            return (
+              <Marker
+                key={`police-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/police_dept.png')}
+                  style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            );
+          })}
+
+          {hospitalStations.map((st) => {
+            if (!st.latitude || !st.longitude) {
+              console.warn("Invalid hospital coordinates", st);
+              return null;
+            }
+            return (
+              <Marker
+                key={`hosp-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/hospital.png')}
+                  style={{ width: pinSize, height: pinSize }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            );
+          })}
+
+          {fireStations.map((st) => {
+            if (!st.latitude || !st.longitude) {
+              console.warn("Invalid fire station coordinates", st);
+              return null;
+            }
+            return (
+              <Marker
+                key={`fire-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/fire_dept.png')}
+                  style={{ width: pinSize, height: pinSize }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            );
+          })}
 
           {/* User Circle */}
           <Circle
@@ -436,78 +535,152 @@ export default function Maps() {
 
         {activeTab === 'Police' && (
           <View className="absolute inset-0 bg-white z-20">
-            {/* @ts-ignore */}
-            <PoliceView onClose={() => setActiveTab('Map')} userLocation={userLocation.coords} />
+            <PoliceView
+              onClose={() => setActiveTab('Map')}
+              onLocate={(st) => {
+                zoomToStation(st);
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            />
           </View>
         )}
         {activeTab === 'Hospitals' && (
           <View className="absolute inset-0 bg-white z-20">
-            {/* @ts-ignore */}
-            <HospitalView onClose={() => setActiveTab('Map')} userLocation={userLocation.coords} />
+            <HospitalView
+              onClose={() => setActiveTab('Map')}
+              onLocate={(st) => {
+                zoomToStation(st);
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            />
           </View>
         )}
         {activeTab === 'Fire' && (
           <View className="absolute inset-0 bg-white z-20">
-            {/* @ts-ignore */}
-            <FireView onClose={() => setActiveTab('Map')} userLocation={userLocation.coords} />
+            <FireView
+              onClose={() => setActiveTab('Map')}
+              onLocate={(st) => {
+                zoomToStation(st);
+                setSelectedStation(st);
+                setStationModalVisible(true);
+              }}
+            />
           </View>
         )}
 
-        {/* Bottom Tabs */}
-        <View className="absolute bottom-0 w-full z-30">
-          <BottomSheet
-            activeTab={activeTab}
-            onTabPress={(tab) => {
-              if (tab === 'Report') {
-                setReportModalVisible(true);
-                setActiveTab('Map');
-              } else {
-                setActiveTab(tab);
+      <View className="absolute bottom-0 w-full z-30">
+      <BottomSheet
+        activeTab={activeTab}
+        onTabPress={async (tab) => {
+          if (tab === 'Report') {
+            try {
+              const current = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+              });
+
+              setDeviceLocation({
+                latitude: current.coords.latitude,
+                longitude: current.coords.longitude,
+              });
+
+              const geocodes = await Location.reverseGeocodeAsync({
+                latitude: current.coords.latitude,
+                longitude: current.coords.longitude,
+              });
+
+              if (geocodes.length > 0) {
+                const { formatted, city, street } = formatAddress(
+                  geocodes[0] as ExtendedGeocodedAddress
+                );
+                setStreet(street);
+                setAddress(formatted);
+                setCity(city as any);
               }
-            }}
-            className="shadow-lg"
-          />
-        </View>
-        
-        {/* Modals */}
-        <ReportIncidentModal
-          visible={reportModalVisible}
-          onClose={() => {
-            setReportModalVisible(false);
-            setActiveTab('Map');
-          }}
-          locationName={address}
-          selectedLocation={selectedLocation}
-          deviceLocation={deviceLocation}
-        />
 
-        <ClusterIncidentsModal
-          visible={clusterModalVisible}
-          onClose={() => setClusterModalVisible(false)}
-          incidents={clusterIncidents}
-          onSelectIncident={(inc) => {
-            setClusterModalVisible(false);
-            setSelectedIncident(inc);
-            setSingleModalVisible(true);
-          }}
-        />
+              closeAllModals();
+              setReportModalVisible(true);
+              setActiveTab('Map');
+            } catch (err) {
+              console.error('Failed to fetch location before opening Report modal:', err);
+            }
+          } else if (tab === 'Call') {
+            try {
+              const current = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+              });
+              setDeviceLocation({
+                latitude: current.coords.latitude,
+                longitude: current.coords.longitude,
+              });
 
-        <IncidentDetailsModal
-          visible={singleModalVisible}
-          onClose={() => setSingleModalVisible(false)}
-          incident={selectedIncident}
-        />
+              closeAllModals();
+              setCallModalVisible(true); // ⬅️ open Call modal
+              setActiveTab('Map');
+            } catch (err) {
+              console.error('Failed to fetch location before opening Call modal:', err);
+            }
+          } else {
+            setActiveTab(tab);
+          }
+        }}
+        className="shadow-lg"
+      />
+    </View>
 
-        <StationDetailsModal
-          visible={stationModalVisible}
-          onClose={() => setStationModalVisible(false)}
-          station={selectedStation}
-          onLocate={(st: Station) => {
-            zoomToStation(st);
-            setStationModalVisible(false);
-          }}
-        />
-      </View>
-    </>
-  );
+    {/* Modals */}
+    <View className="absolute inset-0 z-50">
+      <ReportIncidentModal
+        visible={reportModalVisible}
+        onClose={() => {
+          setReportModalVisible(false);
+          setActiveTab('Map');
+        }}
+        locationName={address}
+        city={city}
+        selectedLocation={selectedLocation}
+        deviceLocation={{
+          latitude: liveCoords?.latitude ?? 0,
+          longitude: liveCoords?.longitude ?? 0,
+        }}
+      />
+
+      <CallModal
+        visible={callModalVisible}
+        onClose={() => setCallModalVisible(false)}
+        userCoords={{
+          latitude: liveCoords?.latitude ?? 0,
+          longitude: liveCoords?.longitude ?? 0,
+        }}
+      />
+
+      <ClusterIncidentsModal
+        visible={clusterModalVisible}
+        onClose={() => setClusterModalVisible(false)}
+        incidents={clusterIncidents}
+        onSelectIncident={(inc) => {
+          setClusterModalVisible(false);
+          handleIncidentPress(inc);
+        }}
+      />
+
+      <IncidentDetailsModal
+        visible={singleModalVisible}
+        onClose={() => setSingleModalVisible(false)}
+        incident={selectedIncident}
+      />
+
+      <StationDetailsModal
+        visible={stationModalVisible}
+        onClose={() => setStationModalVisible(false)}
+        station={selectedStation}
+        onLocate={(st: Station) => {
+          zoomToStation(st);
+        }}
+      />
+    </View>
+  </View>
+  </>
+);
 }

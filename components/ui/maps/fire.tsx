@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Modal, Image, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Modal,
+  Image,
+  Linking,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { supabase } from '~/utils/supabase';
@@ -10,38 +19,46 @@ interface Station {
   name: string;
   address: string;
   phone_number: string;
+  chief: string;
   latitude: number;
   longitude: number;
   dist_m: number;
   logo_url?: string;
 }
 
-export default function FireView({ onClose }: { onClose: () => void }) {
+export default function FireView({
+  onClose,
+  onLocate,
+}: {
+  onClose: () => void;
+  onLocate: (station: Station) => void;
+}) {
   const [stations, setStations] = useState<Station[]>([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Station | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  useEffect(() => { initialize(); }, []);
+  useEffect(() => {
+    initialize();
+  }, []);
 
   const initialize = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return;
 
-    try {
-      const loc = await Location.getCurrentPositionAsync();
-      const lat = loc.coords.latitude, long = loc.coords.longitude;
-      const { data, error } = await supabase.rpc('nearby_fire', { lat, long });
-      if (!error && data) setStations(data);
-      else if (error) console.error('nearby_fire rpc error:', error);
-    } catch (err) {
-      console.error('location error:', err);
-    }
+    const loc = await Location.getCurrentPositionAsync();
+    const lat = loc.coords.latitude,
+      long = loc.coords.longitude;
+
+    const { data, error } = await supabase.rpc('nearby_fire', { lat, long });
+    if (!error && data) setStations(data);
+    else console.error(error);
   };
 
-  const filtered = stations.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.address.toLowerCase().includes(search.toLowerCase())
+  const filtered = stations.filter(
+    (s) =>
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.address.toLowerCase().includes(search.toLowerCase())
   );
 
   const select = (st: Station) => {
@@ -49,9 +66,9 @@ export default function FireView({ onClose }: { onClose: () => void }) {
     setModalVisible(true);
   };
 
-  const handleCall = (phone?: string) => {
+  const handleCall = (phone: string) => {
     if (!phone) return;
-    Linking.openURL(`tel:${phone}`).catch(err =>
+    Linking.openURL(`tel:${phone}`).catch((err) =>
       console.error('Failed to open dialer:', err)
     );
   };
@@ -62,7 +79,9 @@ export default function FireView({ onClose }: { onClose: () => void }) {
         <TouchableOpacity onPress={onClose} className="w-10">
           <Ionicons name="arrow-back" size={24} color="black" />
         </TouchableOpacity>
-        <Text className="text-lg font-poppins-semibold flex-1 text-center">Fire Stations</Text>
+        <Text className="text-lg font-poppins-semibold flex-1 text-center">
+          Fire Stations
+        </Text>
         <View className="w-10" />
       </View>
 
@@ -84,7 +103,7 @@ export default function FireView({ onClose }: { onClose: () => void }) {
             onPress={() => select(st)}
             className="bg-white border border-gray-200 rounded-xl p-3 mb-3 flex-row items-center"
           >
-            {/* Logo on the left */}
+            {/* Logo */}
             {st.logo_url ? (
               <Image
                 source={{ uri: st.logo_url }}
@@ -117,7 +136,11 @@ export default function FireView({ onClose }: { onClose: () => void }) {
 
       {/* Details Modal */}
       <Modal transparent visible={modalVisible} animationType="fade">
-        <BlurView tint="dark" intensity={100} className="flex-1 justify-center items-center p-5">
+        <BlurView
+          tint="dark"
+          intensity={100}
+          className="flex-1 justify-center items-center p-5"
+        >
           <View className="w-full bg-white rounded-2xl p-6 shadow-lg">
             {selected && (
               <>
@@ -129,12 +152,16 @@ export default function FireView({ onClose }: { onClose: () => void }) {
                   />
                 )}
 
-                <Text className="font-poppins-bold text-lg text-center">{selected.name}</Text>
+                <Text className="font-poppins-bold text-lg text-center">
+                  {selected.name}
+                </Text>
                 <Text className="font-poppins-regular text-sm text-green-600 mb-2 text-center">
                   {selected.address}
                 </Text>
 
-                <TouchableOpacity onPress={() => handleCall(selected.phone_number)}>
+                <TouchableOpacity
+                  onPress={() => handleCall(selected.phone_number)}
+                >
                   <Text className="font-poppins-regular text-gray-800 mt-2">
                     Phone:{' '}
                     <Text className="font-poppins-regular underline text-green-600">
@@ -158,7 +185,13 @@ export default function FireView({ onClose }: { onClose: () => void }) {
                   <TouchableOpacity
                     className="px-4 py-2 bg-green-500 rounded-lg ml-3"
                     onPress={() => {
-                      setModalVisible(false);
+                      if (selected) {
+                        setModalVisible(false);
+                        onClose(); // 🔥 close FireView first
+                        setTimeout(() => {
+                          onLocate(selected); // 🔥 then pan + open StationDetailsModal
+                        }, 300);
+                      }
                     }}
                   >
                     <Text className="font-poppins-medium text-white">Locate</Text>

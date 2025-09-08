@@ -1,6 +1,6 @@
 // report-incident-modal.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -10,6 +10,7 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -24,6 +25,7 @@ export interface ReportIncidentModalProps {
   locationName: string;
   selectedLocation: Region | null;
   deviceLocation: { latitude: number; longitude: number };
+  city: string;
 }
 
 export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
@@ -32,7 +34,20 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   locationName,
   selectedLocation,
   deviceLocation,
+  city,
 }) => {
+  /** ---------------- Locked snapshot ---------------- */
+  const [lockedAddress, setLockedAddress] = useState(locationName);
+  const [lockedCity, setLockedCity] = useState(city);
+
+  useEffect(() => {
+    if (visible) {
+      setLockedAddress(locationName);
+      setLockedCity(city);
+    }
+  }, [visible]);
+
+  /** ---------------- Incident state ---------------- */
   const defaultLatLng = selectedLocation
     ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }
     : { latitude: deviceLocation.latitude, longitude: deviceLocation.longitude };
@@ -42,27 +57,24 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [showValidationError, setShowValidationError] = useState(false);
-  const [displayLocationName, setDisplayLocationName] = useState(locationName);
-  const [city, setCity] = useState('');
   const [picking, setPicking] = useState(false);
+
+  // temp states while picking
   const [tempPickRegion, setTempPickRegion] = useState<Region>({
     latitude: defaultLatLng.latitude,
     longitude: defaultLatLng.longitude,
     latitudeDelta: 0.002,
     longitudeDelta: 0.002,
   });
+  const [previewAddress, setPreviewAddress] = useState(locationName);
 
   const [isSafetyTip, setIsSafetyTip] = useState(false);
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!visible) resetReportFields();
-  }, [visible]);
+  const mapRef = useRef<MapView>(null);
 
   const resetReportFields = () => {
     setReportLatLng(defaultLatLng);
-    setDisplayLocationName(locationName);
-    setCity('');
     setIncidentType('');
     setDescription('');
     setShowValidationError(false);
@@ -71,35 +83,11 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     setIsSafetyTip(false);
   };
 
-  const formatAddressFromCoords = async (lat: number, lng: number) => {
-    try {
-      const geocodes = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      if (geocodes.length > 0) {
-        const p = geocodes[0];
-        const cityName = p.city || p.subregion || 'CAMANAVA';
-        setCity(cityName);
-
-        const formatted = [
-          `${p.name || ''} ${p.street || 'Unknown Street'}`.trim(),
-          cityName,
-          'Metro Manila',
-        ]
-          .filter(Boolean)
-          .join(', ');
-
-        setDisplayLocationName(formatted);
-      }
-    } catch (err) {
-      console.error('reverseGeocode error:', err);
-    }
-  };
-
   useEffect(() => {
-    if (reportLatLng) {
-      formatAddressFromCoords(reportLatLng.latitude, reportLatLng.longitude);
-    }
-  }, [reportLatLng]);
+    if (!visible) resetReportFields();
+  }, [visible]);
 
+  /** ---------------- Submit handler ---------------- */
   const handleSubmit = async () => {
     if (description.trim().length < 10 || !reportLatLng || (isSafetyTip && !selectedEmoji)) {
       setShowValidationError(true);
@@ -128,15 +116,16 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
       const baseData = {
         uid: userUid,
         description,
-        location: displayLocationName,
-        city,
-        latitude: reportLatLng.latitude,
+        location: lockedAddress,
+        city: lockedCity,
+        latitude: reportLatLng.latitude,       // chosen pin location
         longitude: reportLatLng.longitude,
-        original_latitude: deviceLocation.latitude,
+        original_latitude: deviceLocation.latitude,   // 🟢 current GPS at submit time
         original_longitude: deviceLocation.longitude,
         date: new Date().toISOString().split('T')[0],
         time: new Date().toTimeString().split(' ')[0],
       };
+
 
       const result = isSafetyTip
         ? await supabase.from('safety_tips').insert([{ ...baseData, emoji: selectedEmoji }])
@@ -157,6 +146,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     }
   };
 
+  /** ---------------- Render ---------------- */
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View className="flex-1 justify-center items-center bg-black/40 px-4">
@@ -172,7 +162,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
             </Text>
             <TouchableOpacity
               onPress={() => {
-                if (picking) setPicking(false); // close map if open
+                if (picking) setPicking(false);
                 setIsSafetyTip(!isSafetyTip);
               }}
             >
@@ -184,20 +174,21 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
 
           {/* Address always visible */}
           <View className="mb-4">
-            <Text className="text-sm text-gray-600 font-poppins-regular mb-1">Location:</Text>
-            <Text className="text-base font-poppins-semibold text-green-600">
-              {displayLocationName}
+            <Text className="text-sm text-gray-600">Location:</Text>
+            <Text className="text-sm text-green-600 font-poppins-semibold mb-1">
+              {picking ? previewAddress : lockedAddress}
             </Text>
             {!picking && (
               <TouchableOpacity
                 className="self-center mt-2 px-3 py-2 rounded-3xl bg-gray-100"
                 onPress={() => {
-                setTempPickRegion({
-                  latitude: reportLatLng.latitude,
-                  longitude: reportLatLng.longitude,
-                  latitudeDelta: 0.0005,
-                  longitudeDelta: 0.0005,
-                });
+                  setTempPickRegion({
+                    latitude: reportLatLng.latitude,
+                    longitude: reportLatLng.longitude,
+                    latitudeDelta: 0.0005,
+                    longitudeDelta: 0.0005,
+                  });
+                  setPreviewAddress(lockedAddress);
                   setPicking(true);
                 }}
               >
@@ -209,33 +200,85 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
           {picking ? (
             <>
               <View className="h-80 w-full mb-4 rounded-lg overflow-hidden">
-              <MapView
-                provider={PROVIDER_GOOGLE}
-                style={{ flex: 1 }}
-                region={tempPickRegion} // just pass the whole region object
-                onRegionChangeComplete={(region) => {
-                  setTempPickRegion(region); // ✅ save whole region, including deltas
-                  formatAddressFromCoords(region.latitude, region.longitude);
-                }}
-              />
-              <View className="absolute inset-0 justify-center items-center pointer-events-none">
-                <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
+                <MapView
+                  ref={mapRef}
+                  provider={PROVIDER_GOOGLE}
+                  style={{ flex: 1 }}
+                  initialRegion={tempPickRegion}
+                  onRegionChangeComplete={async (region) => {
+                    setTempPickRegion(region);
+                    try {
+                      const geocodes = await Location.reverseGeocodeAsync({
+                        latitude: region.latitude,
+                        longitude: region.longitude,
+                      });
+                      if (geocodes.length > 0) {
+                        const p = geocodes[0];
+                        setPreviewAddress(
+                          `${p.name || ''} ${p.street || ''}, ${p.city || p.subregion || ''}, Metro Manila`
+                        );
+                      }
+                    } catch (err) {
+                      console.error('reverse-geocode preview failed:', err);
+                    }
+                  }}
+                />
+
+                {/* Pin indicator */}
+                <View className="absolute inset-0 justify-center items-center pointer-events-none">
+                  <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
+                </View>
+
+                {/* Floating recenter button */}
+                <TouchableOpacity
+                  className="absolute right-4 bottom-4 bg-white rounded-full w-12 h-12 items-center justify-center shadow"
+                  onPress={() => {
+                    if (mapRef.current) {
+                      mapRef.current.animateToRegion(
+                        {
+                          latitude: tempPickRegion.latitude,
+                          longitude: tempPickRegion.longitude,
+                          latitudeDelta: 0.001,
+                          longitudeDelta: 0.001,
+                        },
+                        500
+                      );
+                    }
+                  }}
+                >
+                  <Image
+                    source={require('~/assets/map-icons/target.png')}
+                    tintColor="#6B7280"
+                    className="w-7 h-7"
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
               </View>
-            </View>
+
               <View className="flex-row justify-between mb-4">
                 <TouchableOpacity
                   className="bg-gray-300 px-4 py-2 rounded-lg w-[48%] items-center"
-                  onPress={() => setPicking(false)}
+                  onPress={() => {
+                    setPicking(false); // Cancel → discard temp changes
+                  }}
                 >
                   <Text className="font-poppins-medium text-gray-800">Cancel</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   className="bg-green-500 px-4 py-2 rounded-lg w-[48%] items-center"
                   onPress={() => {
+                    // Confirm → lock in temp values
                     setReportLatLng({
                       latitude: tempPickRegion.latitude,
                       longitude: tempPickRegion.longitude,
                     });
+                    setLockedAddress(previewAddress);
+
+                    // Extract city from previewAddress
+                    const cityMatch = previewAddress.split(',')[1]?.trim() || ''; 
+                    setLockedCity(cityMatch);
+
                     setPicking(false);
                   }}
                 >
@@ -244,20 +287,15 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
               </View>
             </>
           ) : (
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 12 }}
-            >
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 12 }}>
               {!isSafetyTip && (
                 <View
                   className={`border rounded-lg mb-4 p-3 ${
                     showValidationError && !incidentType ? 'border-red-500' : 'border-gray-300'
                   }`}
                 >
-                  <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">
-                    Type of Incident
-                  </Text>
-                  {['Theft', 'Sexual Crime', 'Disorderly Conduct'].map((type) => (
+                  <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">Type of Incident</Text>
+                  {['Theft', 'Sexual Incident', 'Disorderly Conduct'].map((type) => (
                     <TouchableOpacity
                       key={type}
                       className="py-2"
@@ -313,9 +351,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
 
               {/* Submit */}
               <TouchableOpacity
-                className={`rounded-lg py-4 items-center mt-3 ${
-                  loading ? 'bg-gray-400' : 'bg-green-500'
-                }`}
+                className={`rounded-lg py-4 items-center mt-3 ${loading ? 'bg-gray-400' : 'bg-green-500'}`}
                 onPress={handleSubmit}
                 disabled={loading}
               >

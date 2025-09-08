@@ -173,7 +173,7 @@ export default function NumberOTP() {
             )}
 
             <Note className="w-90">
-              Kindly wait for at least 3 minutes for the OTP to arrive
+              Kindly wait for at least 10 minutes for the OTP to arrive
             </Note>
 
             {resendTimer > 0 ? (

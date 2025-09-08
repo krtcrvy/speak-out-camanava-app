@@ -23,22 +23,33 @@ export default function EditNumber() {
   const [phoneNumber, setPhoneNumber] = React.useState('');
   const [isValid, setIsValid] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [showError, setShowError] = React.useState(false);
+  const [notFoundError, setNotFoundError] = React.useState(false);
+
   const router = useRouter();
   const { data, setData } = useSignUpContext();
 
   React.useEffect(() => {
-    // Philippine mobile validation: must start with 9 and be 10 digits
     const digitsOnly = phoneNumber.replace(/\D/g, '');
     const valid = digitsOnly.length === 10 && digitsOnly.startsWith('9') && !/^(\d)\1+$/.test(digitsOnly);
     setIsValid(valid);
+
+    // Clear error states when input changes
+    setShowError(false);
+    setNotFoundError(false);
   }, [phoneNumber]);
 
   const handleClear = () => {
     setPhoneNumber('');
+    setShowError(false);
+    setNotFoundError(false);
   };
 
   const handleConfirm = async () => {
-    if (!isValid) return;
+    if (!isValid) {
+      setShowError(true);
+      return;
+    }
 
     setLoading(true);
 
@@ -51,13 +62,13 @@ export default function EditNumber() {
         .maybeSingle();
 
       if (existing && !existingError) {
-        Alert.alert('Number Exists', 'This mobile number is already registered.');
+        setNotFoundError(true);
         setLoading(false);
         return;
       }
 
       // 2️⃣ Send OTP to new number
-      const response = await fetch(`${BACKEND_URL}/api/send-otp`, {
+      const response = await fetch(`${BACKEND_URL}/api/signup-send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: phoneNumber })
@@ -75,9 +86,8 @@ export default function EditNumber() {
 
       router.replace({
         pathname: '/(auth)/sign-up/number-verification',
-        params: { fromEdit: 'true', phoneNumber } // ✅ send it
+        params: { fromEdit: 'true', phoneNumber }
       });
-
 
     } catch (err) {
       console.error(err);
@@ -103,14 +113,30 @@ export default function EditNumber() {
             <PhoneNumberInput
               value={phoneNumber}
               onChangeText={(text) => {
-                // Strip non-digits
-                const digitsOnly = text.replace(/\D/g, '');
-                // Limit to 10 digits max
+                let digitsOnly = text.replace(/\D/g, '');
+                // Strip leading 0 if present
+                if (digitsOnly.startsWith('0')) {
+                  digitsOnly = digitsOnly.slice(1);
+                }
+                // Limit to 10 digits
                 if (digitsOnly.length <= 10) {
                   setPhoneNumber(digitsOnly);
                 }
               }}
             />
+
+            {/* ✅ Show errors below input */}
+            {showError && (
+              <Text className="text-red-600 text-sm font-medium mt-2 text-center">
+                ❗ Please enter a valid Philippine mobile number
+              </Text>
+            )}
+
+            {notFoundError && (
+              <Text className="text-red-600 text-sm font-medium mt-2 text-center">
+                ❗ This number is already registered in the system
+              </Text>
+            )}
           </View>
         </View>
         

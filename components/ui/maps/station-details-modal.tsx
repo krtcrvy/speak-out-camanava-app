@@ -1,13 +1,6 @@
 import React from 'react';
-import {
-  Modal,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-  Image,
-  Linking,
-} from 'react-native';
+import { View, Text, TouchableOpacity, Image, Linking } from 'react-native';
+import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 
 export interface Station {
   id: number;
@@ -28,19 +21,18 @@ interface Props {
 }
 
 const handleCall = (phone: string) => {
-    if (!phone) return;
-    Linking.openURL(`tel:${phone}`).catch(err =>
-      console.error("Failed to open dialer:", err)
-    );
-  };
+  if (!phone) return;
+  Linking.openURL(`tel:${phone}`).catch(err =>
+    console.error("Failed to open dialer:", err)
+  );
+};
 
 export default function StationDetailsModal({
   visible,
   onClose,
   station,
-  onLocate,
 }: Props) {
-  if (!station) return null;
+  if (!visible || !station) return null;
 
   const getFallbackIcon = () => {
     switch (station.type) {
@@ -56,41 +48,27 @@ export default function StationDetailsModal({
   };
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 justify-end">
-        <View
-          className="bg-white rounded-2xl max-h-[35%] mx-2 mb-10 p-4"
-          style={{
-            marginBottom: 70,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.2,
-            shadowRadius: 6,
-            elevation: 5,
-            position: 'relative', // needed for absolute children positioning
-          }}
-        >
-          {/* Close button top right */}
-          <TouchableOpacity
-            onPress={onClose}
-            style={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              zIndex: 10,
-            }}
-          >
-            <Text className="text-xl font-poppins-semibold text-gray-500">×</Text>
-          </TouchableOpacity>
-
-          {/* Content Row */}
-          <View className="flex-row items-center">
+    <View
+      className="absolute bottom-0 w-full items-center"
+      style={{ zIndex: 50, marginBottom: 90 }}
+    >
+      <Animated.View
+        entering={SlideInDown.duration(250)}
+        exiting={SlideOutDown.duration(250)}
+        className="bg-white rounded-2xl w-[96%] p-4"
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 6,
+          elevation: 5,
+        }}
+      >
+        {/* Header with Close */}
+        <View className="flex-row justify-between items-start mb-2">
+          <View className="flex-row items-center flex-1">
             <Image
-              source={
-                station.logo_url
-                  ? { uri: station.logo_url }
-                  : getFallbackIcon()
-              }
+              source={station.logo_url ? { uri: station.logo_url } : getFallbackIcon()}
               style={{ width: 40, height: 40, marginRight: 8, borderRadius: 20 }}
               resizeMode="cover"
             />
@@ -106,21 +84,23 @@ export default function StationDetailsModal({
                   {station.address}
                 </Text>
               )}
+              {!!station.phone_number && (
+                <TouchableOpacity
+                  onPress={() => handleCall(station.phone_number)}
+                  className="mt-1"
+                >
+                  <Text className="font-poppins-regular text-sm underline text-green-600">
+                    📞 {station.phone_number}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-
-          {/* Phone number below */}
-          {!!station.phone_number && (
-            <View style={{ alignSelf: 'flex-end', marginTop: 8 }}>
-              <TouchableOpacity onPress={() => handleCall(station.phone_number)}>
-                <Text className="font-poppins-regular text-sm underline text-green-600">
-                  📞 {station.phone_number}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <TouchableOpacity onPress={onClose}>
+            <Text className="text-2xl font-poppins-semibold text-gray-400">×</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      </Animated.View>
+    </View>
   );
 }

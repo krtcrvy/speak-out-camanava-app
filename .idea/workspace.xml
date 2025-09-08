@@ -5,24 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a832beb3-7305-4ab7-adad-22a6e99bfd3f" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/edit-number.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/edit-number.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/number-otp.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/number-otp.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/number-verification.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/number-verification.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/map-icons/0dd21e08-fdcd-405f-add0-9b0c16e62984.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/map-icons/images.jpg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/fire.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/fire.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/hospital.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/hospital.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/map-footer.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/map-footer.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/police.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/police.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/station-details-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/station-details-modal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/call-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/call-modal.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

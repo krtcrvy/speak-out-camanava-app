@@ -27,15 +27,14 @@ export default function PinUser() {
     first_name: string;
     last_name: string;
     contact_no: string;
-    app_pin: string;
   } | null>(null);
+
   const inputsRef = React.useRef<(TextInput | null)[]>([]);
   const router = useRouter();
 
   const formatPhoneNumber = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10) return phone;
-
     return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)}`;
   };
 
@@ -53,17 +52,7 @@ export default function PinUser() {
 
       if (idx === 5 || newDigits.every(d => d !== '')) {
         const inputPin = newDigits.join('');
-        if (inputPin === userData?.app_pin) {
-          setSuccess(true);
-          setDigits(Array(6).fill("✓"));
-          setTimeout(() => {
-            router.replace('/(auth)/sign-up/mapsv3');
-          }, 500);
-        } else {
-          setError(true);
-          setDigits(["", "", "", "", "", ""]);
-          setTimeout(() => inputsRef.current[0]?.focus(), 100);
-        }
+        verifyPin(inputPin);
       }
     }
   };
@@ -86,6 +75,44 @@ export default function PinUser() {
     inputsRef.current[0]?.focus();
   };
 
+  /** 🔑 Verify PIN with backend */
+  const verifyPin = async (inputPin: string) => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user?.id) {
+        setError(true);
+        return;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/verify-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: user.id, pin: inputPin }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setSuccess(true);
+        setDigits(Array(6).fill("✓"));
+        setTimeout(() => {
+          router.replace("/(auth)/sign-up/mapsv3");
+        }, 500);
+      } else {
+        setError(true);
+        setDigits(["", "", "", "", "", ""]);
+        setTimeout(() => inputsRef.current[0]?.focus(), 100);
+      }
+    } catch (err) {
+      console.error("PIN verify error:", err);
+      setError(true);
+      setDigits(["", "", "", "", "", ""]);
+    }
+  };
+
   React.useEffect(() => {
     (async () => {
       const {
@@ -100,15 +127,14 @@ export default function PinUser() {
 
       const { data, error } = await supabase
         .from('users')
-        .select('first_name, last_name, contact_no, app_pin')
+        .select('first_name, last_name, contact_no')
         .eq('uid', user.id)
-        .maybeSingle(); // ← handles 0 rows safely
+        .maybeSingle();
 
       if (error) {
         console.error('❌ Supabase error:', error.message);
       } else if (!data) {
         console.warn('⚠️ No user found with uid:', user.id);
-        // Optionally redirect, show message, or fallback
         return;
       } else {
         setUserData(data);
@@ -147,7 +173,7 @@ export default function PinUser() {
       console.log(`✅ OTP sent to ${userData.contact_no}`);
       router.push({
         pathname: '/(auth)/sign-up/forgot-pin/forgot-pin',
-        params: { phoneNumber: userData.contact_no }, // Pass number to OTP screen
+        params: { phoneNumber: userData.contact_no },
       });
     } catch (err) {
       console.error('❌ Error sending OTP:', err);
@@ -172,11 +198,8 @@ export default function PinUser() {
               <Text className="font-poppins text-lg text-gray-600 mt-1 tracking-wider">
                 {userData && (
                   <>
-                    {/* First Name: First letter + ◉ */}
                     {userData.first_name.charAt(0)}
                     {Array(userData.first_name.length - 1).fill('◉').join('')}{" "}
-
-                    {/* Last Name Masking */}
                     {userData.last_name.length < 4 ? (
                       <>
                         {Array(userData.last_name.length - 1).fill('◉').join('')}
@@ -192,7 +215,11 @@ export default function PinUser() {
                   </>
                 )}
               </Text>
-              <Text className="text-base font-poppins-semibold text-black mt-12 mb-2">Enter your PIN</Text>
+
+              <Text className="text-base font-poppins-semibold text-black mt-12 mb-2">
+                Enter your PIN
+              </Text>
+
               <Pressable onPress={focusFirstInput} className="flex-row gap-3 justify-center mb-2">
                 {digits.map((digit, idx) => (
                   <TextInput
@@ -208,12 +235,12 @@ export default function PinUser() {
                       height: 20,
                       borderRadius: 999,
                       borderWidth: 2,
-                      borderColor: error ? '#DC2626' : 
-                                  success ? '#8AA22F' : 
+                      borderColor: error ? '#DC2626' :
+                                  success ? '#8AA22F' :
                                   digit ? '#8AA22F' : '#D1D5DB',
-                      backgroundColor: digit ? 
-                                      (error ? '#FEE2E2' : 
-                                      success ? '#8AA22F' : '#8AA22F') : 
+                      backgroundColor: digit ?
+                                      (error ? '#FEE2E2' :
+                                      success ? '#8AA22F' : '#8AA22F') :
                                       'transparent',
                       textAlign: 'center',
                       color: 'transparent',
@@ -221,8 +248,6 @@ export default function PinUser() {
                     }}
                     editable={!success}
                     autoFocus={idx === 0}
-                    accessibilityLabel={`PIN digit ${idx + 1}`}
-                    accessibilityHint={error ? "Incorrect digit" : "Enter your PIN digit"}
                   />
                 ))}
               </Pressable>
@@ -268,7 +293,6 @@ export default function PinUser() {
               You're about to switch accounts
             </Text>
 
-            {/* Proceed Button */}
             <View className="w-80 gap-4">
               <Button
                 variant="default"
@@ -282,8 +306,7 @@ export default function PinUser() {
                 <Text className="text-[#8AA22F] font-semibold">Proceed</Text>
               </Button>
             </View>
-            
-            {/* 🔹 Logout Button */}
+
             <View className="w-80 gap-4 mt-4">
               <Button
                 variant="outline2"
@@ -298,7 +321,6 @@ export default function PinUser() {
               </Button>
             </View>
 
-            {/* Cancel Button */}
             <View className="w-80 gap-4 mt-4">
               <Button
                 variant="outline2"

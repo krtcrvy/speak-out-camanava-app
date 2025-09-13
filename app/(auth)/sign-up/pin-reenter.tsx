@@ -18,6 +18,8 @@ import * as React from 'react';
 import { useRouter } from 'expo-router';
 import { useSignUpContext } from '~/components/layouts/auth/signup-context';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
+
 AppState.addEventListener('change', (state) => {
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
@@ -73,20 +75,22 @@ export default function ReenterPIN() {
 
       const uid = userData.user.id;
 
-      // 2️⃣ Update app_pin for this user
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ app_pin: reenteredPin })
-        .eq('uid', uid);
+      // 2️⃣ Call backend endpoint to set hashed PIN
+      const response = await fetch(`${BACKEND_URL}/api/set-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid, pin: reenteredPin }),
+      });
 
-      if (updateError) {
-        console.error("❌ Failed to update app_pin:", updateError);
-        Alert.alert("Update Failed", updateError.message || "Could not save PIN.");
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        console.error("❌ Failed to save PIN:", result.error);
+        Alert.alert("Update Failed", result.error || "Could not save PIN.");
         setLoading(false);
         return;
       }
 
-      console.log("✅ PIN saved for user:", uid);
+      console.log("✅ PIN saved securely for user:", uid);
 
       // 3️⃣ Clear sign-up context and redirect
       resetData();
@@ -144,7 +148,9 @@ export default function ReenterPIN() {
                   </View>
                 </View>
 
-                <Note className="mt-4 w-90">This will be used for signing in. Remember your PIN.</Note>
+                <Note className="mt-4 w-90">
+                  This will be used for signing in. Remember your PIN.
+                </Note>
               </View>
 
               <View className="w-full pb-4">

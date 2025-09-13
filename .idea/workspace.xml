@@ -5,9 +5,27 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a832beb3-7305-4ab7-adad-22a6e99bfd3f" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/eas.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.config.js" beforeDir="false" afterPath="$PROJECT_DIR$/app.config.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/fire.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/hospitals.tsx" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/mapsv3.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/maps/call-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/call-modal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/number-verification.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/number-verification.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/personal-info.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/pin-reenter.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/pin-reenter.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/pin-user.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/(auth)/sign-up/pin-user.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(auth)/sign-up/police.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/_layout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/hospital.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/hospital.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/incident-modal" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/incident-modals.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/location-header.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/police.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/police.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/report-incident-modal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/components/ui/maps/station-details-modal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/maps/station-details-modal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

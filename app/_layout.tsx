@@ -4,7 +4,7 @@ import { PhotoProvider } from '~/components/layouts/auth/photo-context';
 import { SignUpProvider } from '~/components/layouts/auth/signup-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import {
   Poppins_100Thin,
@@ -48,6 +48,10 @@ import {
   Inter_900Black_Italic,
 } from '@expo-google-fonts/inter';
 
+import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
+import { registerForPushNotificationsAsync } from '~/utils/registerPush';
+
 export default function Layout() {
   const [loaded, error] = useFonts({
     Poppins_100Thin,
@@ -88,11 +92,54 @@ export default function Layout() {
     Inter_900Black_Italic,
   });
 
+  // 🔔 Local toggle (later you can hook it to a real setting)
+  const hapticFeedback = true;
+
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
+
   useEffect(() => {
     if (loaded || error) {
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
+
+  useEffect(() => {
+    // Register device for push notifications
+    registerForPushNotificationsAsync();
+
+    // Foreground notification listener
+    notificationListener.current =
+      Notifications.addNotificationReceivedListener((notification) => {
+        console.log('📩 Notification received:', notification);
+
+        if (hapticFeedback) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }
+      });
+
+    // Notification tap listener (works in background/foreground)
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        console.log('👆 Notification tapped:', response);
+
+        if (hapticFeedback) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        // TODO: Navigate based on response.notification.request.content.data
+        // e.g. router.push(`/incident/${response.notification.request.content.data.id}`);
+      });
+
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, [hapticFeedback]);
 
   if (!loaded && !error) {
     return null;

@@ -1,4 +1,3 @@
-import React from 'react';
 import { View, Text, TouchableOpacity, Image, Linking } from 'react-native';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 
@@ -49,13 +48,23 @@ export default function StationDetailsModal({
 
   return (
     <View
-      className="absolute bottom-0 w-full items-center"
-      style={{ zIndex: 50, marginBottom: 90 }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 50,
+        justifyContent: 'flex-end',  // ⬅️ stick modal to bottom
+        alignItems: 'center',
+        paddingBottom: 90,           // ⬅️ buffer above footer
+      }}
+      pointerEvents="box-none"
     >
       <Animated.View
         entering={SlideInDown.duration(250)}
         exiting={SlideOutDown.duration(250)}
-        className="bg-white rounded-2xl w-[96%] p-4"
+        className="bg-white rounded-2xl w-[96%] p-4 max-h-[55%]" // ⬅️ add max height
         style={{
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
@@ -63,6 +72,7 @@ export default function StationDetailsModal({
           shadowRadius: 6,
           elevation: 5,
         }}
+        pointerEvents="auto"
       >
         {/* Header with Close */}
         <View className="flex-row justify-between items-start mb-2">

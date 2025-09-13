@@ -19,6 +19,7 @@ import type {
   LocationObjectCoords,
   LocationSubscription,
 } from 'expo-location';
+import * as Haptics from 'expo-haptics';
 
 import Supercluster from 'supercluster';
 import type { Feature, Point } from 'geojson';
@@ -74,7 +75,7 @@ export default function Maps() {
   const [userLocation, setUserLocation] = useState<LocationObject | null>(null);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
 
-  // 🟢 reverse-geocoded info
+  // reverse-geocoded info
   const [street, setStreet] = useState('Fetching…');
   const [address, setAddress] = useState('Fetching location…');
   const [city, setCity] = useState<string>('None');
@@ -100,9 +101,9 @@ export default function Maps() {
 
   /** -------- incidents + supercluster -------- */
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
-  const superclusterRef = useRef<Supercluster<ClusterProps>>(
-    new Supercluster({ radius: 60, maxZoom: 20 })
-  );
+  const [safetyTips, setSafetyTips] = useState<any[]>([]);
+  const superclusterRef =
+    useRef<Supercluster<ClusterProps, Supercluster.AnyProps> | null>(null);
 
   /** -------- modal states -------- */
   const [clusterModalVisible, setClusterModalVisible] = useState(false);
@@ -115,8 +116,32 @@ export default function Maps() {
   );
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
 
-  // 🟢 NEW Call modal state
+  // Call modal
   const [callModalVisible, setCallModalVisible] = useState(false);
+
+  /** -------- filters state -------- */
+  const [timeFilter, setTimeFilter] = useState<
+    'today' | 'week' | 'month' | 'year' | 'all'
+  >('today');
+  const [pinTypes, setPinTypes] = useState({
+    theft: true,
+    sexual: true,
+    disorderly: true,
+  });
+  const [showReminders, setShowReminders] = useState(true);
+
+  const [stationFilters, setStationFilters] = useState({
+    police: true,
+    hospital: true,
+    fire: true,
+  });
+
+  /** -------- user circle radius -------- */
+
+  const [userRadius, setUserRadius] = useState<number>(60); // default 1000m
+  const triggeredRef = useRef<
+    Record<string, { inside: boolean; timeout?: NodeJS.Timeout }>
+  >({});
 
   /** -------- auth tracking -------- */
   useEffect(() => {
@@ -147,10 +172,23 @@ export default function Maps() {
         return;
       }
 
-      const { data, error } = await supabase.from('incidents').select('*');
-      if (error) console.error('Incidents load error:', error);
-      setIncidents((data ?? []) as IncidentRow[]);
+      // fetch incidents + safety tips together
+      try {
+        const resp = await fetch(
+          `${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/incidents/list`
+        );
+        const json = await resp.json();
+        if (resp.ok) {
+          setIncidents(json.incidents || []);
+          setSafetyTips(json.safetyTips || []);
+        } else {
+          console.error('Failed to fetch incidents/tips:', json.error);
+        }
+      } catch (err) {
+        console.error('Network error fetching incidents/tips:', err);
+      }
 
+      // one-time fetch
       const current = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -170,6 +208,19 @@ export default function Maps() {
       };
       setMapRegion(initialRegion);
 
+      // 👇 continuous updates
+      subscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 2000, // update every 2s
+          distanceInterval: 2, // or every 2 meters
+        },
+        (loc) => {
+          setLiveCoords(loc.coords);
+        }
+      );
+
+
       setLoading(false);
     })();
 
@@ -178,7 +229,7 @@ export default function Maps() {
     };
   }, []);
 
-  /** 🟢 Reverse-geocode when liveCoords change */
+  /** reverse-geocode when liveCoords change */
   useEffect(() => {
     if (liveCoords) {
       (async () => {
@@ -233,18 +284,68 @@ export default function Maps() {
   const scaleFactor = Math.max(0.5, Math.min(1, zoomLevel / 18));
   const pinSize = baseSize * scaleFactor;
 
-  /** -------- incidents into supercluster -------- */
-  useEffect(() => {
-    const points: ClusterPoint[] = incidents.map((inc) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [inc.longitude, inc.latitude] },
-      properties: { incident: inc, id: inc.iid },
-    }));
-    superclusterRef.current.load(points);
-  }, [incidents]);
+  /** -------- filter incidents -------- */
+  const filteredIncidents = useMemo(() => {
+    const now = new Date();
 
+    return incidents.filter((inc) => {
+      // Filter by pin type
+      const lower = inc.type_of_incident?.toLowerCase() || '';
+      if (lower.includes('theft') && !pinTypes.theft) return false;
+      if (lower.includes('sexual') && !pinTypes.sexual) return false;
+      if (lower.includes('disorderly') && !pinTypes.disorderly) return false;
+
+      // Filter by time
+      if (timeFilter !== 'all') {
+        const incDate = new Date(`${inc.date}T${inc.time}`);
+        const diffDays =
+          (now.getTime() - incDate.getTime()) / (1000 * 60 * 60 * 24);
+
+        if (timeFilter === 'today' && diffDays > 1) return false;
+        if (timeFilter === 'week' && diffDays > 7) return false;
+        if (timeFilter === 'month' && diffDays > 30) return false;
+        if (timeFilter === 'year' && diffDays > 365) return false;
+      }
+
+      return true;
+    });
+  }, [incidents, pinTypes, timeFilter]);
+
+  /** -------- build supercluster & compute clusters -------- */
   const clusters = useMemo(() => {
     if (!mapRegion) return [];
+
+    const points: ClusterPoint[] = filteredIncidents
+      .filter(
+        (inc) =>
+          typeof inc.latitude === "number" &&
+          typeof inc.longitude === "number" &&
+          isFinite(inc.latitude) &&
+          isFinite(inc.longitude)
+      )
+      .map((inc) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [inc.longitude, inc.latitude] },
+        properties: { incident: inc, id: inc.iid },
+      }));
+
+    if (points.length !== filteredIncidents.length) {
+      console.warn(
+        `⚠️ Dropped ${filteredIncidents.length - points.length} invalid incidents`
+      );
+    }
+
+    const sc = new Supercluster<ClusterProps, Supercluster.AnyProps>({
+      radius: 60,
+      maxZoom: 20,
+    });
+
+    if (points.length > 0) {
+      sc.load(points);
+    }
+
+    superclusterRef.current = sc;
+
     const bbox: [number, number, number, number] = [
       mapRegion.longitude - mapRegion.longitudeDelta / 2,
       mapRegion.latitude - mapRegion.latitudeDelta / 2,
@@ -252,9 +353,82 @@ export default function Maps() {
       mapRegion.latitude + mapRegion.latitudeDelta / 2,
     ];
     const zoom = Math.min(Math.max(regionToZoom(mapRegion), 0), 20);
-    return superclusterRef.current.getClusters(bbox, zoom);
-  }, [mapRegion, incidents]);
 
+
+    // 🚨 guard: don’t call getClusters if no points loaded
+    if (points.length === 0) {
+      console.log("📦 No points, returning []");
+      return [];
+    }
+
+    if (!bbox.every((v) => isFinite(v)) || !isFinite(zoom)) {
+      console.warn("❌ Invalid bbox or zoom:", bbox, zoom);
+      return [];
+    }
+
+    const clusters = sc.getClusters(bbox, zoom);
+    console.log(`📦 clusters: ${clusters.length}`);
+    return clusters;
+  }, [filteredIncidents, mapRegion]);
+
+
+  /** -------- vibration detection -------- */
+  useEffect(() => {
+    if (!liveCoords) return;
+
+    const visiblePins = [
+      ...filteredIncidents.map((inc) => ({
+        id: `incident-${inc.iid}`,
+        type: inc.type_of_incident,
+        coords: { lat: inc.latitude, lng: inc.longitude },
+        date: inc.date,
+        time: inc.time,
+      })),
+      ...(showReminders
+        ? safetyTips.map((tip) => ({
+            id: `tip-${tip.iid}`,
+            type: 'Safety Tip',
+            coords: { lat: tip.latitude, lng: tip.longitude },
+            date: tip.date,
+            time: tip.time,
+          }))
+        : []),
+    ];
+
+    visiblePins.forEach((pin) => {
+      const dx = (liveCoords.latitude - pin.coords.lat) * 111320;
+      const dy =
+        (liveCoords.longitude - pin.coords.lng) *
+        (40075000 *
+          Math.cos((liveCoords.latitude * Math.PI) / 180) /
+          360);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      const record = triggeredRef.current[pin.id] || { inside: false };
+
+      if (dist <= userRadius) {
+        if (!record.inside) {
+          console.log(
+            `🔔 ${pin.type} at (${pin.coords.lat}, ${pin.coords.lng}) — Date: ${pin.date} ${pin.time}`
+          );
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+          record.inside = true;
+        }
+      } else {
+        if (record.inside) {
+          if (record.timeout) clearTimeout(record.timeout);
+          record.timeout = setTimeout(() => {
+            record.inside = false;
+          }, 5000);
+        }
+      }
+
+      triggeredRef.current[pin.id] = record;
+    });
+  }, [liveCoords, filteredIncidents, safetyTips, showReminders, userRadius]);
+
+  /** -------- helpers -------- */
   const recenterMap = () => {
     if (userLocation && mapRef.current) {
       const { latitude, longitude } = userLocation.coords;
@@ -296,18 +470,18 @@ export default function Maps() {
     setSingleModalVisible(false);
     setStationModalVisible(false);
     setReportModalVisible(false);
-    setCallModalVisible(false); // 🟢 include call modal
+    setCallModalVisible(false);
   };
 
   const handleClusterPress = (clusterId: number) => {
     closeAllModals();
-    const leaves = superclusterRef.current.getLeaves(clusterId, Infinity);
+    const leaves =
+      superclusterRef.current?.getLeaves(clusterId, Infinity) ?? [];
     const leafIncidents = leaves.map(
       (l) => (l.properties as ClusterProps).incident
     );
     setClusterIncidents(leafIncidents);
     setClusterModalVisible(true);
-
     isProgrammaticMove.current = true;
   };
 
@@ -342,6 +516,8 @@ export default function Maps() {
   return (
     <>
       <Stack.Screen options={{ title: 'Maps', headerShown: false }} />
+
+      {/* Main map + UI wrapper */}
       <View className="flex-1 bg-white">
         {/* Map & Markers */}
         <MapView
@@ -363,76 +539,81 @@ export default function Maps() {
           }}
         >
           {/* Station markers */}
-          {policeStations.map((st) =>
-            st.latitude && st.longitude ? (
-              <Marker
-                key={`police-${st.id}`}
-                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                onPress={() => {
-                  isProgrammaticMove.current = true;
-                  setSelectedStation(st);
-                  setStationModalVisible(true);
-                }}
-              >
-                <Image
-                  source={require('~/assets/map-icons/police_dept.png')}
-                  style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
-                  resizeMode="contain"
-                />
-              </Marker>
-            ) : null
-          )}
+          {stationFilters.police &&
+            policeStations.map((st) =>
+              st.latitude && st.longitude ? (
+                <Marker
+                  key={`police-${st.id}`}
+                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                  onPress={() => {
+                    isProgrammaticMove.current = true;
+                    setSelectedStation(st);
+                    setStationModalVisible(true);
+                  }}
+                >
+                  <Image
+                    source={require('~/assets/map-icons/police_dept.png')}
+                    style={{ width: pinSize, height: pinSize, tintColor: 'green' }}
+                    resizeMode="contain"
+                  />
+                </Marker>
+              ) : null
+            )}
 
-          {hospitalStations.map((st) =>
-            st.latitude && st.longitude ? (
-              <Marker
-                key={`hosp-${st.id}`}
-                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                onPress={() => {
-                  isProgrammaticMove.current = true;
-                  setSelectedStation(st);
-                  setStationModalVisible(true);
-                }}
-              >
-                <Image
-                  source={require('~/assets/map-icons/hospital.png')}
-                  style={{ width: pinSize, height: pinSize }}
-                  resizeMode="contain"
-                />
-              </Marker>
-            ) : null
-          )}
+          {stationFilters.hospital &&
+            hospitalStations.map((st) =>
+              st.latitude && st.longitude ? (
+                <Marker
+                  key={`hosp-${st.id}`}
+                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                  onPress={() => {
+                    isProgrammaticMove.current = true;
+                    setSelectedStation(st);
+                    setStationModalVisible(true);
+                  }}
+                >
+                  <Image
+                    source={require('~/assets/map-icons/hospital.png')}
+                    style={{ width: pinSize, height: pinSize }}
+                    resizeMode="contain"
+                  />
+                </Marker>
+              ) : null
+            )}
 
-          {fireStations.map((st) =>
-            st.latitude && st.longitude ? (
-              <Marker
-                key={`fire-${st.id}`}
-                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                onPress={() => {
-                  isProgrammaticMove.current = true;
-                  setSelectedStation(st);
-                  setStationModalVisible(true);
-                }}
-              >
-                <Image
-                  source={require('~/assets/map-icons/fire_dept.png')}
-                  style={{ width: pinSize, height: pinSize }}
-                  resizeMode="contain"
-                />
-              </Marker>
-            ) : null
-          )}
+          {stationFilters.fire &&
+            fireStations.map((st) =>
+              st.latitude && st.longitude ? (
+                <Marker
+                  key={`fire-${st.id}`}
+                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                  onPress={() => {
+                    isProgrammaticMove.current = true;
+                    setSelectedStation(st);
+                    setStationModalVisible(true);
+                  }}
+                >
+                  <Image
+                    source={require('~/assets/map-icons/fire_dept.png')}
+                    style={{ width: pinSize, height: pinSize }}
+                    resizeMode="contain"
+                  />
+                </Marker>
+              ) : null
+            )}
 
           {/* User Circle */}
-          <Circle
-            center={{
-              latitude: userLocation.coords.latitude,
-              longitude: userLocation.coords.longitude,
-            }}
-            radius={60}
-            strokeColor="rgb(157, 218, 44)"
-            fillColor="rgba(123, 255, 0, 0.2)"
-          />
+          {liveCoords && (
+            <Circle
+              center={{
+                latitude: liveCoords.latitude,
+                longitude: liveCoords.longitude,
+              }}
+              radius={userRadius ?? 60}   // ✅ follows live location
+              strokeColor="rgb(157, 218, 44)"
+              fillColor="rgba(123, 255, 0, 0.2)"
+            />
+          )}
 
           {/* Clusters & incidents */}
           {clusters.map((c: any) => {
@@ -479,6 +660,20 @@ export default function Maps() {
               />
             );
           })}
+
+          {/* Safety Tips */}
+          {showReminders &&
+            safetyTips.map((tip) => (
+              <Marker
+                key={`tip-${tip.iid}`}
+                coordinate={{
+                  latitude: tip.latitude,
+                  longitude: tip.longitude,
+                }}
+              >
+                <Text style={{ fontSize: 24 }}>{tip.emoji || '⚠️'}</Text>
+              </Marker>
+            ))}
         </MapView>
 
         {/* Header */}
@@ -494,10 +689,21 @@ export default function Maps() {
               setSelectedIncident(inc);
               setSingleModalVisible(true);
             }}
+            // filters props
+            timeFilter={timeFilter}
+            pinTypes={pinTypes}
+            showReminders={showReminders}
+            stationFilters={stationFilters}
+            onChangeFilters={(f) => {
+              if (f.timeFilter !== undefined) setTimeFilter(f.timeFilter);
+              if (f.pinTypes !== undefined) setPinTypes(f.pinTypes);
+              if (f.showReminders !== undefined) setShowReminders(f.showReminders);
+              if (f.stationFilters !== undefined) setStationFilters(f.stationFilters);
+            }}
           />
         </View>
 
-        {/* Recenter */}
+        {/* Recenter button */}
         <TouchableOpacity
           className="absolute right-4 bottom-44 bg-white rounded-full w-12 h-12 items-center justify-center shadow"
           onPress={recenterMap}
@@ -582,7 +788,10 @@ export default function Maps() {
                   setReportModalVisible(true);
                   setActiveTab('Map');
                 } catch (err) {
-                  console.error('Failed to fetch location before opening Report modal:', err);
+                  console.error(
+                    'Failed to fetch location before opening Report modal:',
+                    err
+                  );
                 }
               } else if (tab === 'Call') {
                 try {
@@ -595,10 +804,13 @@ export default function Maps() {
                   });
 
                   closeAllModals();
-                  setCallModalVisible(true); // ⬅️ open Call modal
+                  setCallModalVisible(true);
                   setActiveTab('Map');
                 } catch (err) {
-                  console.error('Failed to fetch location before opening Call modal:', err);
+                  console.error(
+                    'Failed to fetch location before opening Call modal:',
+                    err
+                  );
                 }
               } else {
                 setActiveTab(tab);
@@ -607,67 +819,60 @@ export default function Maps() {
             className="shadow-lg"
           />
         </View>
-
-        {/* Modals */}
-        {(reportModalVisible ||
-          callModalVisible ||
-          clusterModalVisible ||
-          singleModalVisible ||
-          stationModalVisible) && (
-          <View className="absolute inset-0 z-50">
-            <ReportIncidentModal
-              visible={reportModalVisible}
-              onClose={() => {
-                setReportModalVisible(false);
-                setActiveTab('Map');
-              }}
-              locationName={address}
-              city={city}
-              selectedLocation={selectedLocation}
-              deviceLocation={{
-                latitude: liveCoords?.latitude ?? 0,
-                longitude: liveCoords?.longitude ?? 0,
-              }}
-            />
-
-            <CallModal
-              visible={callModalVisible}
-              onClose={() => setCallModalVisible(false)}
-              userCoords={{
-                latitude: liveCoords?.latitude ?? 0,
-                longitude: liveCoords?.longitude ?? 0,
-              }}
-              userCity={city}
-            />
-
-            <ClusterIncidentsModal
-              visible={clusterModalVisible}
-              onClose={() => setClusterModalVisible(false)}
-              incidents={clusterIncidents}
-              onSelectIncident={(inc) => {
-                setClusterModalVisible(false);
-                handleIncidentPress(inc);
-              }}
-            />
-
-            <IncidentDetailsModal
-              visible={singleModalVisible}
-              onClose={() => setSingleModalVisible(false)}
-              incident={selectedIncident}
-            />
-
-            <StationDetailsModal
-              visible={stationModalVisible}
-              onClose={() => setStationModalVisible(false)}
-              station={selectedStation}
-              onLocate={(st: Station) => {
-                zoomToStation(st);
-              }}
-            />
-          </View>
-        )}
-
       </View>
+
+      {/* ---------------- Modals (outside main wrapper) ---------------- */}
+      <ReportIncidentModal
+        visible={reportModalVisible}
+        onClose={() => {
+          setReportModalVisible(false);
+          setActiveTab('Map');
+        }}
+        locationName={address}
+        city={city}
+        selectedLocation={selectedLocation}
+        deviceLocation={{
+          latitude: liveCoords?.latitude ?? 0,
+          longitude: liveCoords?.longitude ?? 0,
+        }}
+      />
+
+      <CallModal
+        visible={callModalVisible}
+        onClose={() => setCallModalVisible(false)}
+        userCoords={{
+          latitude: liveCoords?.latitude ?? 0,
+          longitude: liveCoords?.longitude ?? 0,
+        }}
+        userCity={city}
+      />
+
+      <ClusterIncidentsModal
+        visible={clusterModalVisible}
+        onClose={() => setClusterModalVisible(false)}
+        incidents={clusterIncidents}
+        onSelectIncident={(inc) => {
+          setClusterModalVisible(false);
+          handleIncidentPress(inc);
+        }}
+        pinTypes={pinTypes}
+        timeFilter={timeFilter}
+      />
+
+      <IncidentDetailsModal
+        visible={singleModalVisible}
+        onClose={() => setSingleModalVisible(false)}
+        incident={selectedIncident}
+      />
+
+      <StationDetailsModal
+        visible={stationModalVisible}
+        onClose={() => setStationModalVisible(false)}
+        station={selectedStation}
+        onLocate={(st: Station) => {
+          zoomToStation(st);
+        }}
+      />
     </>
   );
 }

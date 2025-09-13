@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { supabase } from '~/utils/supabase';
 import { BlurView } from 'expo-blur';
 
 interface Station {
@@ -47,12 +46,21 @@ export default function HospitalView({
     if (status !== 'granted') return;
 
     const loc = await Location.getCurrentPositionAsync();
-    const lat = loc.coords.latitude,
-      long = loc.coords.longitude;
+    const lat = loc.coords.latitude;
+    const lng = loc.coords.longitude;
 
-    const { data, error } = await supabase.rpc('nearby_hospital', { lat, long });
-    if (!error && data) setStations(data);
-    else console.error(error);
+    try {
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/stations/stations?type=hospital&lat=${lat}&lng=${lng}`
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch hospitals');
+
+      const data = await response.json();
+      setStations(data);
+    } catch (err) {
+      console.error('❌ Hospitals fetch error:', err);
+    }
   };
 
   const filtered = stations.filter(
@@ -187,9 +195,9 @@ export default function HospitalView({
                     onPress={() => {
                       if (selected) {
                         setModalVisible(false);
-                        onClose(); // 🔥 close HospitalView first
+                        onClose(); // close HospitalView first
                         setTimeout(() => {
-                          onLocate(selected); // 🔥 then pan + open modal on map
+                          onLocate(selected); // then highlight on map
                         }, 300);
                       }
                     }}

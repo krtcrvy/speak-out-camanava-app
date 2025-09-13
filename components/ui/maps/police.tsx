@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { supabase } from '~/utils/supabase';
 import { BlurView } from 'expo-blur';
 
 interface Station {
@@ -47,12 +46,21 @@ export default function PoliceView({
     if (status !== 'granted') return;
 
     const loc = await Location.getCurrentPositionAsync();
-    const lat = loc.coords.latitude,
-      long = loc.coords.longitude;
+    const lat = loc.coords.latitude;
+    const lng = loc.coords.longitude;
 
-    const { data, error } = await supabase.rpc('nearby_police', { lat, long });
-    if (!error && data) setStations(data);
-    else console.error(error);
+    try {
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/stations/stations?type=police&lat=${lat}&lng=${lng}`
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch police stations');
+
+      const data = await response.json();
+      setStations(data);
+    } catch (err) {
+      console.error('❌ Failed to load police stations:', err);
+    }
   };
 
   const filtered = stations.filter(
@@ -194,8 +202,8 @@ export default function PoliceView({
                     onPress={() => {
                       if (selected) {
                         setModalVisible(false);
-                        onClose();          // 🔥 go back to Maps first
-                        setTimeout(() => {  // small delay so Maps is visible
+                        onClose(); // go back to Maps first
+                        setTimeout(() => {
                           onLocate(selected);
                         }, 300);
                       }

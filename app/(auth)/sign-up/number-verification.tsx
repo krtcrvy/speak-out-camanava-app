@@ -11,43 +11,8 @@ import { supabase } from '~/utils/supabase';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system';
 import * as React from 'react';
-import mime from 'mime';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
-
-const uploadImageToBucket = async (
-  uri: string,
-  path: string
-): Promise<string | null> => {
-  try {
-    const fileData = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    const contentType = mime.getType(uri) || 'image/jpeg';
-
-    const { error } = await supabase.storage
-      .from('users-photos')
-      .upload(path, Buffer.from(fileData, 'base64'), {
-        contentType,
-        upsert: true,
-      });
-
-    if (error) {
-      console.error(`❌ Upload failed for ${path}:`, error.message);
-      return null;
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from('users-photos')
-      .getPublicUrl(path);
-
-    return publicUrlData.publicUrl;
-  } catch (err) {
-    console.error(`❌ Upload error for ${path}:`, err);
-    return null;
-  }
-};
 
 export default function NumberVerification() {
   const { phoneNumber } = useLocalSearchParams<{ phoneNumber?: string }>();
@@ -69,7 +34,6 @@ export default function NumberVerification() {
     }
   }, [phoneNumber]);
 
-
   const contactNo = phoneParam || data.contact_no || 'your number';
 
   React.useEffect(() => {
@@ -82,6 +46,14 @@ export default function NumberVerification() {
     setLoading(true);
 
     try {
+      // Convert photos to base64 for backend
+      const idPhotoBase64 = idPhoto
+        ? await FileSystem.readAsStringAsync(idPhoto, { encoding: FileSystem.EncodingType.Base64 })
+        : null;
+      const facePhotoBase64 = facePhoto
+        ? await FileSystem.readAsStringAsync(facePhoto, { encoding: FileSystem.EncodingType.Base64 })
+        : null;
+
       const response = await fetch(`${BACKEND_URL}/api/signup-verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,7 +61,9 @@ export default function NumberVerification() {
           ...data,
           phone: contactNo,
           code: inputOtp,
-          app_pin: appPin
+          app_pin: appPin,
+          id_photo: idPhotoBase64,
+          face_photo: facePhotoBase64,
         }),
       });
 
@@ -104,6 +78,7 @@ export default function NumberVerification() {
         return;
       }
 
+      // Set Supabase session with returned JWT
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: result.token,
         refresh_token: result.token,
@@ -118,60 +93,8 @@ export default function NumberVerification() {
 
       console.log('✅ OTP verified, user created, and logged in');
 
-      let uploadedFiles: string[] = [];
-      let facePhotoUrl = null;
-      let idPhotoUrl = null;
-
-      try {
-        if (facePhoto) {
-          const facePath = `face-photos/${contactNo}.jpeg`;
-          facePhotoUrl = await uploadImageToBucket(facePhoto, facePath);
-          if (facePhotoUrl) uploadedFiles.push(facePath);
-        }
-
-        if (idPhoto) {
-          const idPath = `id-photos/${contactNo}.jpeg`;
-          idPhotoUrl = await uploadImageToBucket(idPhoto, idPath);
-          if (idPhotoUrl) uploadedFiles.push(idPath);
-        }
-
-        if (facePhotoUrl || idPhotoUrl) {
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({
-              face_photo: facePhotoUrl,
-              id_photo: idPhotoUrl
-            })
-            .eq('contact_no', contactNo);
-
-          if (updateError) throw updateError;
-        }
-
-        console.log("✅ Photo URLs saved to DB");
-      } catch (uploadErr) {
-        console.error("❌ Error after uploading files, rolling back:", uploadErr);
-
-        if (uploadedFiles.length > 0) {
-          const { error: removeError } = await supabase
-            .storage
-            .from('users-photos')
-            .remove(uploadedFiles);
-
-          if (removeError) {
-            console.error("❌ Failed to rollback uploaded files:", removeError);
-          } else {
-            console.log("♻️ Rolled back uploaded files");
-          }
-        }
-
-        setError(true);
-        setLoading(false);
-        return;
-      }
-
       resetData();
       router.replace('/(auth)/sign-up/pin-enter');
-
     } catch (err) {
       console.error('❌ Network error during verification:', err);
       setError(true);
@@ -297,7 +220,7 @@ export default function NumberVerification() {
                   <Text className="text-red-500 text-sm font-medium text-center">
                     ❌ OTP is incorrect or expired! Please try again.
                   </Text>
-                )}-
+                )}
 
                 <Note className="w-90">
                   Kindly wait for at least 10 minutes for the OTP to arrive

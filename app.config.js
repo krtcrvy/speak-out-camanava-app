@@ -19,15 +19,12 @@ export default {
 
     assetBundlePatterns: ["**/*"],
 
-    ios: {
-      supportsTablet: true,
-    },
-
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff",
       },
+      package: "com.speakout.camanava", // ✅ Android package
     },
 
     web: {
@@ -94,6 +91,10 @@ export default {
       SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-    }
-  }
+
+      eas: {
+        projectId: "a15c3eb5-78be-4ff4-910d-1169ad023ba7",
+      },
+    },
+  },
 };

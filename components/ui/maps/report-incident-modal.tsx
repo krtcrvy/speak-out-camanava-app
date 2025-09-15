@@ -89,12 +89,13 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     : { latitude: deviceLocation.latitude, longitude: deviceLocation.longitude };
 
   const [reportLatLng, setReportLatLng] = useState(defaultLatLng);
-  const [incidentType, setIncidentType] = useState("Theft"); // ✅ default
+  const [incidentType, setIncidentType] = useState("Theft");
   const [description, setDescription] = useState("");
   const [attachment, setAttachment] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [showValidationError, setShowValidationError] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   const [tempPickRegion, setTempPickRegion] = useState<Region>({
     latitude: defaultLatLng.latitude,
@@ -160,6 +161,8 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     }
 
     setLoading(true);
+    setUploadProgress(0);
+
     try {
       const {
         data: { session },
@@ -173,56 +176,48 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
       }
 
       const userUid = session.user.id;
-      const [uploadProgress, setUploadProgress] = useState<number>(0);
       let attachmentUrl: string | null = null;
 
       if (attachment) {
-  const ext = attachment.name.split(".").pop();
-  const fileName = `${userUid}_${Date.now()}.${ext}`;
-  const mimeType = getMimeType(attachment.name);
+        const ext = attachment.name.split(".").pop();
+        const fileName = `${userUid}_${Date.now()}.${ext}`;
+        const mimeType = getMimeType(attachment.name);
 
-  console.log("🔼 Uploading file:", attachment.name);
+        console.log("🔼 Uploading file:", attachment.name);
 
-  try {
-    // ✅ Request a signed URL
-    const { data: signedUrlData, error: signedUrlError } =
-      await supabase.storage
-        .from("incident-attachments")
-        .createSignedUploadUrl(fileName);
+        try {
+          const { data: signedUrlData, error: signedUrlError } =
+            await supabase.storage.from("incident-attachments").createSignedUploadUrl(fileName);
 
-    if (signedUrlError) throw signedUrlError;
+          if (signedUrlError) throw signedUrlError;
 
-    const { signedUrl, path } = signedUrlData;
+          const { signedUrl, path } = signedUrlData;
 
-    // ✅ Upload with POST form-data (required by Supabase signed upload)
-    const uploadResult = await FileSystem.uploadAsync(signedUrl, attachment.uri, {
-      httpMethod: "POST",
-      fieldName: "file", // <-- Supabase expects "file"
-      headers: {
-        "Content-Type": mimeType,
-      },
-    });
+          const uploadResult = await FileSystem.uploadAsync(signedUrl, attachment.uri, {
+            httpMethod: "POST",
+            fieldName: "file",
+            headers: { "Content-Type": mimeType },
+          });
 
-    if (uploadResult.status !== 200) {
-      throw new Error(`Upload failed with status ${uploadResult.status}`);
-    }
+          if (uploadResult.status !== 200) {
+            throw new Error(`Upload failed with status ${uploadResult.status}`);
+          }
 
-    // ✅ Get permanent public URL
-    const { data: publicUrlData } = supabase.storage
-      .from("incident-attachments")
-      .getPublicUrl(path);
+          setUploadProgress(100);
 
-    attachmentUrl = publicUrlData.publicUrl;
-  } catch (err) {
-    console.error("❌ Upload crash:", err);
-    Alert.alert("Error", "Failed to upload attachment.");
-    setLoading(false);
-    return;
-  }
-}
+          const { data: publicUrlData } = supabase.storage
+            .from("incident-attachments")
+            .getPublicUrl(path);
 
+          attachmentUrl = publicUrlData.publicUrl;
+        } catch (err) {
+          console.error("❌ Upload crash:", err);
+          Alert.alert("Error", "Failed to upload attachment.");
+          setLoading(false);
+          return;
+        }
+      }
 
-      // ✅ Send everything to backend
       const payload = {
         uid: userUid,
         description,
@@ -275,25 +270,27 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
           exiting={FadeOutDown}
           className="w-full max-w-md bg-white rounded-2xl p-5 max-h-[90%]"
         >
-          {/* Mode switch pill */}
-          <View className="flex-row bg-gray-200 rounded-full p-1 mb-6">
-            <TouchableOpacity
-              className={`flex-1 py-2 rounded-full items-center ${!isSafetyTip ? "bg-green-500" : ""}`}
-              onPress={() => setIsSafetyTip(false)}
-            >
-              <Text className={`font-poppins-semibold ${!isSafetyTip ? "text-white" : "text-gray-700"}`}>
-                Report an Incident
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className={`flex-1 py-2 rounded-full items-center ${isSafetyTip ? "bg-green-500" : ""}`}
-              onPress={() => setIsSafetyTip(true)}
-            >
-              <Text className={`font-poppins-semibold ${isSafetyTip ? "text-white" : "text-gray-700"}`}>
-                Safety Reminder
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* ✅ Hide pill switch when picking */}
+          {!picking && (
+            <View className="flex-row bg-gray-200 rounded-full p-1 mb-6">
+              <TouchableOpacity
+                className={`flex-1 py-2 rounded-full items-center ${!isSafetyTip ? "bg-green-500" : ""}`}
+                onPress={() => setIsSafetyTip(false)}
+              >
+                <Text className={`font-poppins-semibold ${!isSafetyTip ? "text-white" : "text-gray-700"}`}>
+                  Report an Incident
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`flex-1 py-2 rounded-full items-center ${isSafetyTip ? "bg-green-500" : ""}`}
+                onPress={() => setIsSafetyTip(true)}
+              >
+                <Text className={`font-poppins-semibold ${isSafetyTip ? "text-white" : "text-gray-700"}`}>
+                  Safety Reminder
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Address always visible */}
           <View className="mb-4">
@@ -421,7 +418,6 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 maxLength={500}
               />
 
-              {/* Attachment field - only for incidents */}
               {!isSafetyTip && (
                 <View className="mb-4">
                   <Text className="text-sm text-gray-700 mb-2 font-poppins-regular">
@@ -459,7 +455,6 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 </View>
               )}
 
-              {/* Submit */}
               <TouchableOpacity
                 className={`rounded-lg py-4 items-center mt-3 ${loading ? "bg-gray-400" : "bg-green-500"}`}
                 onPress={handleSubmit}
@@ -474,7 +469,6 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 )}
               </TouchableOpacity>
 
-              {/* Back button */}
               <TouchableOpacity className="mt-3 items-center" onPress={onClose}>
                 <Text className="text-green-600 font-poppins-semibold text-base">Back</Text>
               </TouchableOpacity>

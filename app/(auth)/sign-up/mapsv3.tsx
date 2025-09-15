@@ -138,7 +138,7 @@ export default function Maps() {
 
   /** -------- user circle radius -------- */
 
-  const [userRadius, setUserRadius] = useState<number>(60); // default 1000m
+  const [userRadius, setUserRadius] = useState<number>(200); // default 200m
   const triggeredRef = useRef<
     Record<string, { inside: boolean; timeout?: NodeJS.Timeout }>
   >({});
@@ -609,7 +609,7 @@ export default function Maps() {
                 latitude: liveCoords.latitude,
                 longitude: liveCoords.longitude,
               }}
-              radius={userRadius ?? 60}   // ✅ follows live location
+              radius={userRadius ?? 60}  
               strokeColor="rgb(157, 218, 44)"
               fillColor="rgba(123, 255, 0, 0.2)"
             />
@@ -692,6 +692,8 @@ export default function Maps() {
             // filters props
             timeFilter={timeFilter}
             pinTypes={pinTypes}
+            detectionRadius={userRadius}
+            onChangeRadius={(val) => setUserRadius(val)}
             showReminders={showReminders}
             stationFilters={stationFilters}
             onChangeFilters={(f) => {

@@ -9,15 +9,46 @@ import {
   ActivityIndicator,
   Switch,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { supabase } from '~/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { IncidentRow } from '~/components/ui/maps/incident-modals';
-import Slider from '@react-native-community/slider'; // slider for detection radius
+import Slider from '@react-native-community/slider';
+
+// ---------------- Helpers ----------------
+function formatReadableDate(datetime: string | null): string {
+  if (!datetime) return '';
+  const date = new Date(datetime);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatTimeAgo(datetime: string | null): string {
+  if (!datetime) return '';
+  const now = new Date();
+  const date = new Date(datetime);
+  const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 31536000) return `${Math.floor(diff / 2592000)}mo ago`;
+  return `${Math.floor(diff / 31536000)}y ago`;
+}
 
 interface LocationHeaderProps {
   street: string;
   address: string;
+  detectionRadius: number;
+  onChangeRadius: (val: number) => void;
   isLoggedIn: boolean;
   uid?: string;
   onLogout?: () => void | Promise<void>;
@@ -40,6 +71,8 @@ interface LocationHeaderProps {
 export default function LocationHeader({
   street,
   address,
+  detectionRadius,
+  onChangeRadius,
   isLoggedIn,
   uid,
   onLogout,
@@ -58,20 +91,87 @@ export default function LocationHeader({
   const [logsVisible, setLogsVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [contactsVisible, setContactsVisible] = useState(false);
+  const [inboxVisible, setInboxVisible] = useState(false);
 
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
+  const [safetyTips, setSafetyTips] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSafetyTip, setIsSafetyTip] = useState(false);
 
+  // --- Inbox states ---
+  const [inboxMessages, setInboxMessages] = useState<any[]>([]);
+  const [hasNewInbox, setHasNewInbox] = useState(false);
+
   // --- Notifications states ---
-  const [detectionRadius, setDetectionRadius] = useState(1000); // default 1km
   const [notifySafety, setNotifySafety] = useState(true);
   const [notifyIncidents, setNotifyIncidents] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
 
+  // ---------------- Supabase user_settings ----------------
+  useEffect(() => {
+    if (!uid) return;
+
+    const loadSettings = async () => {
+      const { data, error } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('uid', uid)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // No settings row → insert defaults
+        const { data: newSettings } = await supabase
+          .from('user_settings')
+          .insert({ uid })
+          .select()
+          .single();
+        if (newSettings) applySettings(newSettings);
+      } else if (!error && data) {
+        applySettings(data);
+      }
+    };
+
+    loadSettings();
+  }, [uid]);
+
+  const applySettings = (settings: any) => {
+    onChangeRadius(settings.detection_radius);
+    setNotifySafety(settings.notify_safety);
+    setNotifyIncidents(settings.notify_incidents);
+    setHapticFeedback(settings.haptic_feedback);
+
+    onChangeFilters({
+      timeFilter: settings.time_filter,
+      pinTypes: {
+        theft: settings.pin_theft,
+        sexual: settings.pin_sexual,
+        disorderly: settings.pin_disorderly,
+      },
+      showReminders: settings.show_reminders,
+      stationFilters: {
+        police: settings.show_police,
+        hospital: settings.show_hospital,
+        fire: settings.show_fire,
+      },
+    });
+  };
+
+  const saveSettings = async (updates: Partial<any>) => {
+    if (!uid) return;
+    await supabase
+      .from('user_settings')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('uid', uid);
+  };
+
+  // ---------------- Logs ----------------
   useEffect(() => {
     if (logsVisible && uid) {
       fetchUserIncidents();
+      fetchUserSafetyTips();
     }
   }, [logsVisible, uid]);
 
@@ -92,6 +192,61 @@ export default function LocationHeader({
     setLoading(false);
   };
 
+  const fetchUserSafetyTips = async () => {
+    const { data, error } = await supabase
+      .from('safety_tips')
+      .select('*')
+      .eq('uid', uid)
+      .order('date', { ascending: false })
+      .order('time', { ascending: false });
+
+    if (!error && data) {
+      setSafetyTips(data);
+    } else {
+      console.error('Failed to fetch safety tips:', error);
+    }
+  };
+
+  // ---------------- Inbox ----------------
+  useEffect(() => {
+    if (!uid) return;
+    fetchInbox();
+  }, [uid]);
+
+  const fetchInbox = async () => {
+    const { data, error } = await supabase
+      .from('inbox')
+      .select('*')
+      .eq('uid', uid)
+      .order('datetime', { ascending: false });
+
+    if (!error && data) {
+      setInboxMessages(data);
+      setHasNewInbox(data.some((msg) => msg.status === 'Sent'));
+    } else {
+      console.error('Failed to fetch inbox:', error);
+    }
+  };
+
+  const handleCloseInbox = async () => {
+    setInboxVisible(false);
+    if (uid) {
+      await supabase
+        .from('inbox')
+        .update({ status: 'Seen' })
+        .eq('uid', uid)
+        .eq('status', 'Sent');
+      fetchInbox();
+    }
+  };
+
+  // Auto-refresh <ago> every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setInboxMessages((msgs) => [...msgs]);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <View className="mx-4 mt-10">
@@ -130,13 +285,87 @@ export default function LocationHeader({
 
           {/* Filter */}
           <TouchableOpacity
-            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
             onPress={() => setFilterVisible(true)}
           >
             <Ionicons name="filter" size={20} color="#15803d" />
           </TouchableOpacity>
+
+          {/* Inbox */}
+          <TouchableOpacity
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
+            onPress={() => setInboxVisible(true)}
+          >
+            <Ionicons name="mail" size={20} color="#15803d" />
+            {hasNewInbox && (
+              <View className="absolute top-1 right-1 w-3 h-3 bg-red-400 rounded-full" />
+            )}
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* ---------------- Inbox Modal ---------------- */}
+      <Modal
+        visible={inboxVisible}
+        animationType="slide"
+        onRequestClose={handleCloseInbox}
+      >
+        <View className="flex-1 bg-white">
+          <View className="flex-row items-center justify-between mb-2 p-4">
+            <TouchableOpacity onPress={handleCloseInbox} className="w-10">
+              <Ionicons name="arrow-back" size={24} color="black" />
+            </TouchableOpacity>
+            <Text className="text-lg font-poppins-semibold flex-1 text-center">
+              Inbox
+            </Text>
+            <View className="w-10" />
+          </View>
+
+          <ScrollView className="px-4">
+            {inboxMessages.length === 0 ? (
+              <Text className="text-center text-gray-500 mt-10">
+                No messages in your inbox.
+              </Text>
+            ) : (
+              inboxMessages.map((msg) => (
+                <TouchableOpacity
+                  key={msg.id}
+                  className="border-b border-gray-200 py-4"
+                  onPress={async () => {
+                    if (msg.status === 'Sent') {
+                      await supabase
+                        .from('inbox')
+                        .update({ status: 'Seen' })
+                        .eq('id', msg.id);
+                      fetchInbox();
+                    }
+                  }}
+                >
+                  <View>
+                    <View className="flex-row justify-between items-center">
+                      <Text className="text-green-600 font-poppins-bold text-base">
+                        {msg.header || 'Message'}
+                      </Text>
+                      {msg.status === 'Sent' && (
+                        <View className="w-2 h-2 rounded-full bg-red-400 ml-2" />
+                      )}
+                    </View>
+
+                    <Text className="text-sm text-gray-700 mt-1">
+                      {msg.message}
+                    </Text>
+
+                    <Text className="text-xs text-gray-500 mt-2">
+                      {formatReadableDate(msg.datetime)} •{' '}
+                      {formatTimeAgo(msg.datetime)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* ---------------- Cog Menu Modal ---------------- */}
       <Modal
@@ -146,7 +375,7 @@ export default function LocationHeader({
         onRequestClose={() => setMenuVisible(false)}
       >
         <Pressable
-          className="flex-1  items-center justify-center"
+          className="flex-1 items-center justify-center"
           onPress={() => setMenuVisible(false)}
         >
           <Pressable
@@ -165,17 +394,36 @@ export default function LocationHeader({
             </Text>
 
             {[
-              { label: 'Logs', action: () => { setMenuVisible(false); setLogsVisible(true); }},
-              { label: 'Notifications', action: () => { setMenuVisible(false); setNotificationsVisible(true); }},
-              { label: 'Emergency Contact', action: () => { setMenuVisible(false); setContactsVisible(true); }},
-              { label: isLoggedIn ? 'Logout' : 'Sign Up', action: () => { setMenuVisible(false); isLoggedIn ? onLogout?.() : onSignup?.(); }},
+              {
+                label: 'Logs',
+                action: () => {
+                  setMenuVisible(false);
+                  setLogsVisible(true);
+                },
+              },
+              {
+                label: 'Notifications',
+                action: () => {
+                  setMenuVisible(false);
+                  setNotificationsVisible(true);
+                },
+              },
+              {
+                label: isLoggedIn ? 'Logout' : 'Sign Up',
+                action: () => {
+                  setMenuVisible(false);
+                  isLoggedIn ? onLogout?.() : onSignup?.();
+                },
+              },
             ].map((opt) => (
               <TouchableOpacity
                 key={opt.label}
                 className="py-3 border-b border-gray-200"
                 onPress={opt.action}
               >
-                <Text className="text-gray-800 text-base text-center">{opt.label}</Text>
+                <Text className="text-gray-800 text-base text-center">
+                  {opt.label}
+                </Text>
               </TouchableOpacity>
             ))}
           </Pressable>
@@ -189,9 +437,11 @@ export default function LocationHeader({
         onRequestClose={() => setLogsVisible(false)}
       >
         <View className="flex-1 bg-white">
-          {/* Header */}
           <View className="flex-row items-center justify-between mb-2 p-4">
-            <TouchableOpacity onPress={() => setLogsVisible(false)} className="w-10">
+            <TouchableOpacity
+              onPress={() => setLogsVisible(false)}
+              className="w-10"
+            >
               <Ionicons name="arrow-back" size={24} color="black" />
             </TouchableOpacity>
             <Text className="text-lg font-poppins-semibold flex-1 text-center">
@@ -200,35 +450,67 @@ export default function LocationHeader({
             <View className="w-10" />
           </View>
 
-          {/* Pill Switch */}
           <View className="flex-row bg-gray-200 rounded-full p-1 mx-4 mb-6">
             <TouchableOpacity
-              className={`flex-1 py-2 rounded-full items-center ${!isSafetyTip ? 'bg-green-500' : ''}`}
+              className={`flex-1 py-2 rounded-full items-center ${
+                !isSafetyTip ? 'bg-green-500' : ''
+              }`}
               onPress={() => setIsSafetyTip(false)}
             >
-              <Text className={`font-poppins-semibold ${!isSafetyTip ? 'text-white' : 'text-gray-700'}`}>
+              <Text
+                className={`font-poppins-semibold ${
+                  !isSafetyTip ? 'text-white' : 'text-gray-700'
+                }`}
+              >
                 Reported Incidents
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`flex-1 py-2 rounded-full items-center ${isSafetyTip ? 'bg-green-500' : ''}`}
+              className={`flex-1 py-2 rounded-full items-center ${
+                isSafetyTip ? 'bg-green-500' : ''
+              }`}
               onPress={() => setIsSafetyTip(true)}
             >
-              <Text className={`font-poppins-semibold ${isSafetyTip ? 'text-white' : 'text-gray-700'}`}>
+              <Text
+                className={`font-poppins-semibold ${
+                  isSafetyTip ? 'text-white' : 'text-gray-700'
+                }`}
+              >
                 Safety Reminders
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Content */}
           {loading ? (
             <ActivityIndicator size="large" color="#15803d" className="mt-10" />
           ) : isSafetyTip ? (
-            <ScrollView className="px-4">
-              <Text className="text-gray-500 text-center mt-10">
-                Safety reminders list here
+            safetyTips.length === 0 ? (
+              <Text className="text-center text-gray-500 mt-10">
+                No safety reminders yet.
               </Text>
-            </ScrollView>
+            ) : (
+              <ScrollView className="px-4">
+                {safetyTips.map((tip) => (
+                  <View
+                    key={tip.iid}
+                    className="border-b border-gray-200 py-4 flex-row"
+                  >
+                    <Text className="text-xl mr-2">{tip.emoji || '⚠️'}</Text>
+                    <View className="flex-1">
+                      <Text className="text-green-600 font-poppins-bold text-base">
+                        {tip.location}
+                      </Text>
+                      <Text className="text-sm text-gray-600 mt-1">
+                        {tip.description}
+                      </Text>
+                      <Text className="text-xs text-gray-400 mt-1">
+                        {tip.date} • {tip.time}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )
           ) : incidents.length === 0 ? (
             <Text className="text-center text-gray-500 mt-10">
               No incidents reported yet.
@@ -249,7 +531,9 @@ export default function LocationHeader({
                       <Text className="text-green-600 font-poppins-bold text-base">
                         {inc.type_of_incident}
                       </Text>
-                      <Text className="text-xs text-gray-500">{inc.status}</Text>
+                      <Text className="text-xs text-gray-500">
+                        {inc.status}
+                      </Text>
                     </View>
                     {!!inc.location && (
                       <Text className="text-sm font-poppins-semibold text-gray-700 mt-1">
@@ -257,7 +541,9 @@ export default function LocationHeader({
                       </Text>
                     )}
                     {!!inc.description && (
-                      <Text className="text-sm text-gray-600 mt-1">{inc.description}</Text>
+                      <Text className="text-sm text-gray-600 mt-1">
+                        {inc.description}
+                      </Text>
                     )}
                     <Text className="text-xs text-gray-400 mt-1">
                       {inc.date} • {inc.time}
@@ -277,9 +563,11 @@ export default function LocationHeader({
         onRequestClose={() => setNotificationsVisible(false)}
       >
         <View className="flex-1 bg-white">
-          {/* Header */}
           <View className="flex-row items-center justify-between mb-2 p-4">
-            <TouchableOpacity onPress={() => setNotificationsVisible(false)} className="w-10">
+            <TouchableOpacity
+              onPress={() => setNotificationsVisible(false)}
+              className="w-10"
+            >
               <Ionicons name="arrow-back" size={24} color="black" />
             </TouchableOpacity>
             <Text className="text-lg font-poppins-semibold flex-1 text-center">
@@ -289,55 +577,78 @@ export default function LocationHeader({
           </View>
 
           <ScrollView className="px-6">
-            {/* Detection Radius */}
             <Text className="font-poppins-semibold text-gray-700 mb-2 mt-4">
               Detection Radius: {detectionRadius}m
             </Text>
             <Slider
               style={{ width: '100%', height: 40 }}
-              minimumValue={100}
-              maximumValue={5000}
-              step={100}
+              minimumValue={50}
+              maximumValue={1000}
+              step={50}
               value={detectionRadius}
               minimumTrackTintColor="#15803d"
               maximumTrackTintColor="#d1d5db"
               thumbTintColor="#15803d"
-              onValueChange={(val) => setDetectionRadius(val)}
+              onValueChange={(val) => {
+                onChangeRadius(val);
+                saveSettings({ detection_radius: val });
+              }}
             />
 
-            {/* Toggles with same style as LocationHeader checkboxes */}
             <View className="mt-6">
               <TouchableOpacity
                 className="flex-row items-center py-2"
-                onPress={() => setNotifySafety(!notifySafety)}
+                onPress={() => {
+                  const next = !notifySafety;
+                  setNotifySafety(next);
+                  saveSettings({ notify_safety: next });
+                }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    notifySafety ? 'bg-green-600 border-green-600' : 'bg-white border-gray-400'
+                    notifySafety
+                      ? 'bg-green-600 border-green-600'
+                      : 'bg-white border-gray-400'
                   }`}
                 />
-                <Text className="text-gray-700">Notify on Safety Reminders</Text>
+                <Text className="text-gray-700">
+                  Notify on Safety Reminders
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 className="flex-row items-center py-2"
-                onPress={() => setNotifyIncidents(!notifyIncidents)}
+                onPress={() => {
+                  const next = !notifyIncidents;
+                  setNotifyIncidents(next);
+                  saveSettings({ notify_incidents: next });
+                }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    notifyIncidents ? 'bg-green-600 border-green-600' : 'bg-white border-gray-400'
+                    notifyIncidents
+                      ? 'bg-green-600 border-green-600'
+                      : 'bg-white border-gray-400'
                   }`}
                 />
-                <Text className="text-gray-700">Notify on Reported Incidents</Text>
+                <Text className="text-gray-700">
+                  Notify on Reported Incidents
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 className="flex-row items-center py-2"
-                onPress={() => setHapticFeedback(!hapticFeedback)}
+                onPress={() => {
+                  const next = !hapticFeedback;
+                  setHapticFeedback(next);
+                  saveSettings({ haptic_feedback: next });
+                }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    hapticFeedback ? 'bg-green-600 border-green-600' : 'bg-white border-gray-400'
+                    hapticFeedback
+                      ? 'bg-green-600 border-green-600'
+                      : 'bg-white border-gray-400'
                   }`}
                 />
                 <Text className="text-gray-700">Enable Haptic Feedback</Text>
@@ -347,29 +658,7 @@ export default function LocationHeader({
         </View>
       </Modal>
 
-      {/* ---------------- Emergency Contact Modal ---------------- */}
-      <Modal
-        visible={contactsVisible}
-        animationType="slide"
-        onRequestClose={() => setContactsVisible(false)}
-      >
-        <View className="flex-1 bg-white">
-          <View className="flex-row items-center justify-between mb-2 p-4">
-            <TouchableOpacity onPress={() => setContactsVisible(false)} className="w-10">
-              <Ionicons name="arrow-back" size={24} color="black" />
-            </TouchableOpacity>
-            <Text className="text-lg font-poppins-semibold flex-1 text-center">
-              Emergency Contact
-            </Text>
-            <View className="w-10" />
-          </View>
-          <Text className="text-center text-gray-500 mt-10">
-            Emergency contact settings here
-          </Text>
-        </View>
-      </Modal>
-
-      {/* ---------------- Filter Modal (unchanged) ---------------- */}
+      {/* ---------------- Filter Modal ---------------- */}
       <Modal
         transparent
         visible={filterVisible}
@@ -395,7 +684,6 @@ export default function LocationHeader({
               Filters
             </Text>
 
-            {/* Time */}
             <Text className="font-poppins-semibold text-gray-700 mb-2">
               Filter by Time
             </Text>
@@ -405,11 +693,16 @@ export default function LocationHeader({
                 className={`py-2 px-3 mb-2 rounded-lg ${
                   timeFilter === opt ? 'bg-green-100' : 'bg-gray-100'
                 }`}
-                onPress={() => onChangeFilters({ timeFilter: opt as any })}
+                onPress={() => {
+                  onChangeFilters({ timeFilter: opt as any });
+                  saveSettings({ time_filter: opt });
+                }}
               >
                 <Text
                   className={`text-sm ${
-                    timeFilter === opt ? 'text-green-700 font-bold' : 'text-gray-700'
+                    timeFilter === opt
+                      ? 'text-green-700 font-bold'
+                      : 'text-gray-700'
                   }`}
                 >
                   {opt === 'today'
@@ -425,7 +718,6 @@ export default function LocationHeader({
               </TouchableOpacity>
             ))}
 
-            {/* Pin Types */}
             <Text className="font-poppins-semibold text-gray-700 mt-4 mb-2">
               Pins by Type
             </Text>
@@ -433,13 +725,19 @@ export default function LocationHeader({
               <TouchableOpacity
                 key={key}
                 className="flex-row items-center py-2"
-                onPress={() =>
-                  onChangeFilters({ pinTypes: { ...pinTypes, [key]: !value } })
-                }
+                onPress={() => {
+                  const next = !value;
+                  onChangeFilters({ pinTypes: { ...pinTypes, [key]: next } });
+                  saveSettings({
+                    [`pin_${key}`]: next,
+                  });
+                }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    value ? 'bg-green-600 border-green-600' : 'bg-white border-gray-400'
+                    value
+                      ? 'bg-green-600 border-green-600'
+                      : 'bg-white border-gray-400'
                   }`}
                 />
                 <Text className="text-gray-700 capitalize">
@@ -452,7 +750,6 @@ export default function LocationHeader({
               </TouchableOpacity>
             ))}
 
-            {/* Safety Reminders + Stations */}
             <View className="mt-6 border-t border-gray-200 pt-4">
               <View className="flex-row items-center justify-between">
                 <Text className="font-poppins-semibold text-gray-700">
@@ -460,7 +757,10 @@ export default function LocationHeader({
                 </Text>
                 <Switch
                   value={showReminders}
-                  onValueChange={(val) => onChangeFilters({ showReminders: val })}
+                  onValueChange={(val) => {
+                    onChangeFilters({ showReminders: val });
+                    saveSettings({ show_reminders: val });
+                  }}
                   trackColor={{ true: '#bbf7d0', false: '#e5e7eb' }}
                   thumbColor={showReminders ? '#15803d' : '#9ca3af'}
                 />
@@ -472,11 +772,12 @@ export default function LocationHeader({
                 </Text>
                 <Switch
                   value={stationFilters.police}
-                  onValueChange={(val) =>
+                  onValueChange={(val) => {
                     onChangeFilters({
                       stationFilters: { ...stationFilters, police: val },
-                    })
-                  }
+                    });
+                    saveSettings({ show_police: val });
+                  }}
                   trackColor={{ true: '#bbf7d0', false: '#e5e7eb' }}
                   thumbColor={stationFilters.police ? '#15803d' : '#9ca3af'}
                 />
@@ -488,11 +789,12 @@ export default function LocationHeader({
                 </Text>
                 <Switch
                   value={stationFilters.hospital}
-                  onValueChange={(val) =>
+                  onValueChange={(val) => {
                     onChangeFilters({
                       stationFilters: { ...stationFilters, hospital: val },
-                    })
-                  }
+                    });
+                    saveSettings({ show_hospital: val });
+                  }}
                   trackColor={{ true: '#bbf7d0', false: '#e5e7eb' }}
                   thumbColor={stationFilters.hospital ? '#15803d' : '#9ca3af'}
                 />
@@ -504,11 +806,12 @@ export default function LocationHeader({
                 </Text>
                 <Switch
                   value={stationFilters.fire}
-                  onValueChange={(val) =>
+                  onValueChange={(val) => {
                     onChangeFilters({
                       stationFilters: { ...stationFilters, fire: val },
-                    })
-                  }
+                    });
+                    saveSettings({ show_fire: val });
+                  }}
                   trackColor={{ true: '#bbf7d0', false: '#e5e7eb' }}
                   thumbColor={stationFilters.fire ? '#15803d' : '#9ca3af'}
                 />

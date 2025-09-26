@@ -6,6 +6,7 @@ type BottomSheetTab = 'Map' | 'Police' | 'Report' | 'Call' | 'Hospitals' | 'Fire
 
 interface BottomSheetProps {
   activeTab: BottomSheetTab;
+  disableReport?: boolean; // 👈 added
   onTabPress: (tab: BottomSheetTab) => void;
   className?: string;
 }
@@ -14,6 +15,7 @@ interface TabItemProps {
   title: BottomSheetTab;
   isActive: boolean;
   onPress: () => void;
+  disabled?: boolean; // 👈 added
 }
 
 const iconMap: Record<BottomSheetTab, any> = {
@@ -26,10 +28,11 @@ const iconMap: Record<BottomSheetTab, any> = {
 };
 
 const TabItem = React.forwardRef<View, TabItemProps>(
-  ({ title, isActive, onPress }, ref) => {
+  ({ title, isActive, onPress, disabled }, ref) => {
     const [scaleValue] = React.useState(new Animated.Value(1));
 
     const handlePressIn = () => {
+      if (disabled) return;
       Animated.spring(scaleValue, {
         toValue: 0.95,
         useNativeDriver: true,
@@ -37,6 +40,7 @@ const TabItem = React.forwardRef<View, TabItemProps>(
     };
 
     const handlePressOut = () => {
+      if (disabled) return;
       Animated.spring(scaleValue, {
         toValue: 1,
         useNativeDriver: true,
@@ -46,20 +50,22 @@ const TabItem = React.forwardRef<View, TabItemProps>(
     return (
       <TouchableOpacity
         activeOpacity={0.8}
-        onPress={onPress}
+        onPress={!disabled ? onPress : undefined}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         className="flex-1"
         ref={ref}
+        disabled={disabled}
       >
         <Animated.View
           className={cn(
             'items-center justify-center h-24',
-            isActive ? 'bg-green-100' : 'bg-white'
+            isActive ? 'bg-green-100' : 'bg-white',
+            disabled && 'bg-gray-100' // 👈 instead of opacity-50
           )}
           style={{ transform: [{ scale: scaleValue }] }}
         >
-          {isActive && (
+          {isActive && !disabled && (
             <View className="absolute top-0 w-2/3 h-1 bg-green-500" />
           )}
           <Image
@@ -67,15 +73,23 @@ const TabItem = React.forwardRef<View, TabItemProps>(
             style={{
               width: 20,
               height: 20,
-              tintColor: isActive ? '#15803d' : '#6B7280',
+              tintColor: disabled
+                ? '#9CA3AF' // 👈 solid gray
+                : isActive
+                ? '#15803d'
+                : '#6B7280',
               marginBottom: 8,
             }}
             resizeMode="contain"
           />
           <Text
             className={cn(
-              'text-xs font-poppins-medium text-gray-700',
-              isActive && 'text-green-600 font-poppins-semibold'
+              'text-xs font-poppins-medium',
+              disabled
+                ? 'text-gray-400' // 👈 solid gray text
+                : isActive
+                ? 'text-green-600 font-poppins-semibold'
+                : 'text-gray-700'
             )}
           >
             {title}
@@ -89,16 +103,13 @@ const TabItem = React.forwardRef<View, TabItemProps>(
 TabItem.displayName = 'TabItem';
 
 const BottomSheet = React.forwardRef<View, BottomSheetProps>(
-  ({ activeTab, onTabPress, className }, ref) => {
+  ({ activeTab, onTabPress, className, disableReport }, ref) => {
     const tabs: BottomSheetTab[] = ['Map', 'Report', 'Call', 'Police', 'Hospitals', 'Fire'];
 
     return (
       <View
         ref={ref}
-        className={cn(
-          'w-full flex-row justify-between',
-          className
-        )}
+        className={cn('w-full flex-row justify-between', className)}
       >
         {tabs.map((tab) => (
           <TabItem
@@ -106,6 +117,7 @@ const BottomSheet = React.forwardRef<View, BottomSheetProps>(
             title={tab}
             isActive={activeTab === tab}
             onPress={() => onTabPress(tab)}
+            disabled={tab === 'Report' && disableReport} // 👈 disable logic here
           />
         ))}
       </View>

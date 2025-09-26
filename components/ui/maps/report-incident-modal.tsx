@@ -8,17 +8,18 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import MapView, { PROVIDER_GOOGLE, Region } from "react-native-maps";
 import * as Location from "expo-location";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import Animated, { FadeInUp, FadeOutDown } from "react-native-reanimated";
 import { supabase } from "~/utils/supabase";
 import * as FileSystem from "expo-file-system";
 import { Buffer } from "buffer";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
-
 const EMOJIS = ["🦺", "🚧", "🚨", "👮", "🛑", "⚠️"];
 
 /** ---------------- MIME helper ---------------- */
@@ -44,15 +45,12 @@ const getMimeType = (filename: string): string => {
       return "audio/wav";
     case "m4a":
       return "audio/m4a";
+    case "heic":
+    case "heif":
+      return "image/heic";
     default:
       return "application/octet-stream";
   }
-};
-
-/** ---------------- Convert base64 → Blob ---------------- */
-const base64ToBlob = (base64: string, mimeType: string) => {
-  const byteArray = Buffer.from(base64, "base64");
-  return new Blob([byteArray], { type: mimeType });
 };
 
 export interface ReportIncidentModalProps {
@@ -125,7 +123,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     if (!visible) resetReportFields();
   }, [visible]);
 
-  /** ---------------- Attachment picker ---------------- */
+  /** ---------------- Attachment picker with HEIC conversion ---------------- */
   const handlePickAttachment = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
@@ -134,11 +132,33 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
       });
 
       if (res.canceled) return;
-      const file = res.assets[0];
+      let file = res.assets[0];
 
       if (file.size && file.size > 50 * 1024 * 1024) {
         Alert.alert("File too large", "Please select a file smaller than 50 MB.");
         return;
+      }
+
+      // ✅ Auto-convert HEIC → JPEG
+      if (file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif")) {
+        try {
+          const manipulated = await ImageManipulator.manipulateAsync(
+            file.uri,
+            [],
+            { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+          );
+
+          file = {
+            ...file,
+            uri: manipulated.uri,
+            name: file.name.replace(/\.(heic|heif)$/i, ".jpg"),
+          };
+          console.log("Converted HEIC to JPEG:", file.name);
+        } catch (err) {
+          console.error("HEIC conversion failed:", err);
+          Alert.alert("Error", "Failed to convert HEIC image.");
+          return;
+        }
       }
 
       setAttachment(file);
@@ -193,14 +213,23 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
 
           const { signedUrl, path } = signedUrlData;
 
-          const uploadResult = await FileSystem.uploadAsync(signedUrl, attachment.uri, {
-            httpMethod: "POST",
-            fieldName: "file",
-            headers: { "Content-Type": mimeType },
+          // Read file as base64
+          const base64 = await FileSystem.readAsStringAsync(attachment.uri, {
+            encoding: FileSystem.EncodingType.Base64,
           });
 
-          if (uploadResult.status !== 200) {
-            throw new Error(`Upload failed with status ${uploadResult.status}`);
+          // Convert to binary
+          const binary = Buffer.from(base64, "base64");
+
+          // Upload raw binary via PUT
+          const uploadResp = await fetch(signedUrl, {
+            method: "PUT",
+            headers: { "Content-Type": mimeType },
+            body: binary,
+          });
+
+          if (!uploadResp.ok) {
+            throw new Error(`Upload failed with status ${uploadResp.status}`);
           }
 
           setUploadProgress(100);
@@ -261,6 +290,12 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
     }
   };
 
+  /** ---------------- CAMANAVA Restriction ---------------- */
+  const CAMANAVA = ["Malabon", "Navotas", "Caloocan", "Valenzuela"];
+  const isWithinCamanava = CAMANAVA.some(
+    (c) => lockedCity?.toLowerCase().includes(c.toLowerCase())
+  );
+
   /** ---------------- Render ---------------- */
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
@@ -270,7 +305,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
           exiting={FadeOutDown}
           className="w-full max-w-md bg-white rounded-2xl p-5 max-h-[90%]"
         >
-          {/* ✅ Hide pill switch when picking */}
+          {/* Mode Switch */}
           {!picking && (
             <View className="flex-row bg-gray-200 rounded-full p-1 mb-6">
               <TouchableOpacity
@@ -292,12 +327,13 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
             </View>
           )}
 
-          {/* Address always visible */}
+          {/* Address + Change location */}
           <View className="mb-4">
             <Text className="text-sm text-gray-600">Location:</Text>
             <Text className="text-sm text-green-600 font-poppins-semibold mb-1">
               {picking ? previewAddress : lockedAddress}
             </Text>
+
             {!picking && (
               <TouchableOpacity
                 className="self-center mt-2 px-3 py-2 rounded-3xl bg-gray-100"
@@ -312,14 +348,16 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                   setPicking(true);
                 }}
               >
-                <Text className="text-gray-800 font-poppins-medium text-sm">Change location</Text>
+                <Text className="text-gray-800 font-poppins-medium text-sm">
+                  Change location
+                </Text>
               </TouchableOpacity>
             )}
           </View>
 
           {picking ? (
             <>
-              {/* Map picker */}
+              {/* Map Picker */}
               <View className="h-80 w-full mb-4 rounded-lg overflow-hidden">
                 <MapView
                   ref={mapRef}
@@ -345,12 +383,13 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                   }}
                 />
 
-                {/* Pin indicator */}
+                {/* Green dot in center */}
                 <View className="absolute inset-0 justify-center items-center pointer-events-none">
                   <View className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
                 </View>
               </View>
 
+              {/* Confirm / Cancel */}
               <View className="flex-row justify-between mb-4">
                 <TouchableOpacity
                   className="bg-gray-300 px-4 py-2 rounded-lg w-[48%] items-center"
@@ -358,7 +397,6 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 >
                   <Text className="font-poppins-medium text-gray-800">Cancel</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   className="bg-green-500 px-4 py-2 rounded-lg w-[48%] items-center"
                   onPress={() => {
@@ -378,12 +416,9 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
             </>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 12 }}>
+              {/* Incident Type */}
               {!isSafetyTip && (
-                <View
-                  className={`border rounded-lg mb-4 p-3 ${
-                    showValidationError && !incidentType ? "border-red-500" : "border-gray-300"
-                  }`}
-                >
+                <View className="border rounded-lg mb-4 p-3 border-gray-300">
                   <Text className="text-sm text-gray-600 mb-2 font-poppins-regular">Type of Incident</Text>
                   {["Theft", "Sexual Incident", "Disorderly Conduct"].map((type) => (
                     <TouchableOpacity
@@ -406,6 +441,7 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 </View>
               )}
 
+              {/* Description */}
               <TextInput
                 placeholder="Enter a detailed description (min 10 characters)"
                 multiline
@@ -418,22 +454,63 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 maxLength={500}
               />
 
+              {/* Attachment */}
               {!isSafetyTip && (
                 <View className="mb-4">
                   <Text className="text-sm text-gray-700 mb-2 font-poppins-regular">
                     Add Attachment (optional, max 50 MB):
                   </Text>
-                  <TouchableOpacity
-                    onPress={handlePickAttachment}
-                    className="bg-gray-100 rounded-lg px-4 py-3 items-center"
-                  >
-                    <Text className="text-gray-800 font-poppins-medium">
-                      {attachment ? `Selected: ${attachment.name}` : "Pick a file (image, video, or audio)"}
-                    </Text>
-                  </TouchableOpacity>
+
+                  {!attachment ? (
+                    <TouchableOpacity
+                      onPress={handlePickAttachment}
+                      className="bg-gray-100 rounded-lg px-4 py-3 items-center"
+                    >
+                      <Text className="text-gray-800 font-poppins-medium">
+                        Pick a file (image, video, or audio)
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View className="bg-gray-100 rounded-lg px-4 py-3">
+                      {/* ✅ Preview */}
+                      {attachment.name.match(/\.(jpg|jpeg|png)$/i) && (
+                        <Image
+                          source={{ uri: attachment.uri }}
+                          style={{ width: 100, height: 100, borderRadius: 8, marginBottom: 8 }}
+                        />
+                      )}
+                      {attachment.name.match(/\.(mp4|mov|avi)$/i) && (
+                        <Text className="mb-2">🎥 {attachment.name}</Text>
+                      )}
+                      {attachment.name.match(/\.(mp3|wav|m4a)$/i) && (
+                        <Text className="mb-2">🎵 {attachment.name}</Text>
+                      )}
+
+                      <Text className="text-gray-800 font-poppins-medium mb-2">
+                        Selected: {attachment.name}
+                      </Text>
+
+                      <View className="flex-row justify-between">
+                        <TouchableOpacity
+                          onPress={handlePickAttachment}
+                          className="bg-green-500 px-4 py-2 rounded-lg flex-1 mr-2 items-center"
+                        >
+                          <Text className="text-white font-poppins-medium">Replace</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => setAttachment(null)}
+                          className="bg-red-500 px-4 py-2 rounded-lg flex-1 ml-2 items-center"
+                        >
+                          <Text className="text-white font-poppins-medium">Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               )}
 
+              {/* Safety Tip Emoji Picker */}
               {isSafetyTip && (
                 <View className="mb-4">
                   <Text className="text-sm font-poppins-regular text-gray-700 mb-1">
@@ -455,27 +532,26 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 </View>
               )}
 
+              {/* Submit button */}
               <TouchableOpacity
-                className={`rounded-lg py-4 items-center mt-3 ${loading ? "bg-gray-400" : "bg-green-500"}`}
+                className={`rounded-lg py-4 items-center mt-3 ${
+                  loading ? "bg-gray-400" : "bg-green-600"
+                }`}
                 onPress={handleSubmit}
                 disabled={loading}
               >
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text className="text-white font-poppins-semibold text-lg">
-                    {isSafetyTip ? "POST TIP" : "SUBMIT REPORT"}
+                  <Text className="text-white font-poppins-semibold">
+                    {isSafetyTip ? "Submit Tip" : "Submit Incident"}
                   </Text>
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity className="mt-3 items-center" onPress={onClose}>
-                <Text className="text-green-600 font-poppins-semibold text-base">Back</Text>
-              </TouchableOpacity>
-
               {showValidationError && (
-                <Text className="self-center text-red-600 text-sm font-medium mt-1">
-                  Please complete all required fields!
+                <Text className="text-red-500 text-center mt-2 text-sm">
+                  Please complete all required fields.
                 </Text>
               )}
             </ScrollView>

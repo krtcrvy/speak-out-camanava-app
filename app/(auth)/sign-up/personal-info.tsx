@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { AuthHeader } from '~/components/layouts/auth/auth-header';
 import { AuthLayout } from '~/components/layouts/auth/auth-layout';
 import { useSignUpContext } from '~/components/layouts/auth/signup-context';
@@ -16,7 +16,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { supabase } from '~/utils/supabase';
 import * as React from 'react';
 
 type FieldName =
@@ -30,6 +30,9 @@ type FieldName =
   | 'agree';
 
 export default function PersonalInfo() {
+  const { resubmit } = useLocalSearchParams<{ resubmit?: string }>();
+  const reverifyMode = resubmit === 'true';
+
   const [first_name, setFirstName] = React.useState('');
   const [last_name, setLastName] = React.useState('');
   const [address, setAddress] = React.useState('');
@@ -54,6 +57,25 @@ export default function PersonalInfo() {
 
   const { setData } = useSignUpContext();
   const router = useRouter();
+
+  // 👉 Prefill contact_no & email when in reverify mode
+  React.useEffect(() => {
+    if (reverifyMode) {
+      supabase.auth.getUser().then(({ data }) => {
+        const user = data.user;
+        if (user) {
+          const phone = user.phone ?? '';
+          const mail = user.email ?? '';
+          setContactNo(phone);
+          setEmail(mail);
+          setData({
+            contact_no: phone,
+            email: mail,
+          });
+        }
+      });
+    }
+  }, [reverifyMode]);
 
   const clearError = (field: FieldName) =>
     setValidationErrors((prev) => ({ ...prev, [field]: false }));
@@ -88,6 +110,8 @@ export default function PersonalInfo() {
 
   /** 🔹 Call backend duplicate-check endpoint */
   const checkDuplicate = async (email: string, phone: string) => {
+    if (reverifyMode) return true; // ✅ Skip duplicate check during resubmit
+
     try {
       const response = await fetch(
         `${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/duplicate-check`,
@@ -125,12 +149,20 @@ export default function PersonalInfo() {
   /** 🔹 Call backend send-otp endpoint */
   const sendOtp = async (phone: string) => {
     try {
+      let payload: Record<string, any> = { phone };
+
+      if (reverifyMode) {
+        const { data: userData } = await supabase.auth.getUser();
+        const uid = userData?.user?.id;
+        payload = { phone, uid, resubmit: true };
+      }
+
       const response = await fetch(
         `${process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL}/api/signup-send-otp`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify(payload),
         }
       );
 
@@ -138,7 +170,7 @@ export default function PersonalInfo() {
 
       if (!response.ok) {
         console.error('❌ OTP send failed:', result);
-        Alert.alert('OTP Error', 'Failed to send verification code.');
+        Alert.alert('OTP Error', result.error || 'Failed to send verification code.');
         return false;
       }
 
@@ -160,7 +192,7 @@ export default function PersonalInfo() {
       return;
     }
 
-    // 🔎 Step 1: Check duplicate on backend
+    // 🔎 Step 1: Check duplicate (skip if reverify)
     const notDuplicate = await checkDuplicate(email, contact_no);
     if (!notDuplicate) return;
 
@@ -181,11 +213,15 @@ export default function PersonalInfo() {
     // 📲 Step 2: Send OTP
     const otpSent = await sendOtp(contact_no);
     if (otpSent) {
-      router.push('/(auth)/sign-up/number-verification');
+      router.push({
+        pathname: '/(auth)/sign-up/number-verification',
+        params: { resubmit: reverifyMode ? 'true' : 'false' },
+      });
     }
   };
 
   const onChangeContactNo = (v: string) => {
+    if (reverifyMode) return; // 🚫 Don't allow editing
     let digits = v.replace(/\D/g, '');
     if (digits.startsWith('0')) digits = digits.slice(1);
     if (digits.length > 10) digits = digits.slice(0, 10);
@@ -211,9 +247,12 @@ export default function PersonalInfo() {
               title="Let's Get Started!"
               subtitle="Create Account"
             />
-            <View className="w-full mt-8 md:mt-12">
-              <StepProgress total={5} current={3} />
-            </View>
+
+            {!reverifyMode && (
+              <View className="w-full mt-8 md:mt-12">
+                <StepProgress total={5} current={3} />
+              </View>
+            )}
 
             <View className="flex-1 w-full gap-4 mt-4">
               <Input
@@ -258,9 +297,10 @@ export default function PersonalInfo() {
                 maxLength={10}
                 value={contact_no}
                 onChangeText={onChangeContactNo}
-                className={
+                editable={!reverifyMode}
+                className={`${
                   validationErrors.contactNo ? 'border-red-500' : 'border-gray-300'
-                }
+                } ${reverifyMode ? 'bg-gray-100 text-gray-500' : ''}`}
               />
 
               <Input
@@ -269,12 +309,14 @@ export default function PersonalInfo() {
                 autoCapitalize="none"
                 value={email}
                 onChangeText={(v) => {
+                  if (reverifyMode) return;
                   setEmail(v);
                   clearError('email');
                 }}
-                className={
+                editable={!reverifyMode}
+                className={`${
                   validationErrors.email ? 'border-red-500' : 'border-gray-300'
-                }
+                } ${reverifyMode ? 'bg-gray-100 text-gray-500' : ''}`}
               />
 
               <BirthdatePickerDropdown

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { supabase } from '~/utils/supabase';
 import { Text } from '~/components/ui/text';
 import { ImageBackground } from '~/components/ui/image-background';
@@ -11,14 +11,19 @@ const logo = require('~/assets/logo.png');
 
 export default function LoadingScreen() {
   const router = useRouter();
+  const { incidentId, safetyId, latitude, longitude } = useLocalSearchParams<{
+    incidentId?: string;
+    safetyId?: string;
+    latitude?: string;
+    longitude?: string;
+  }>();
 
   // Animation values
   const spinValue = useRef(new Animated.Value(0)).current;
-  const logoScale = useRef(new Animated.Value(1)).current; // bounce
-  const fadeValue = useRef(new Animated.Value(1)).current; // fade-out
-  const screenScale = useRef(new Animated.Value(1)).current; // zoom-out
+  const logoScale = useRef(new Animated.Value(1)).current;
+  const fadeValue = useRef(new Animated.Value(1)).current;
+  const screenScale = useRef(new Animated.Value(1)).current;
 
-  // Continuous spin + bounce loop
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -45,7 +50,7 @@ export default function LoadingScreen() {
           ]),
         ]),
         Animated.timing(spinValue, {
-          toValue: 0, // reset spin value
+          toValue: 0,
           duration: 0,
           useNativeDriver: true,
         }),
@@ -57,75 +62,50 @@ export default function LoadingScreen() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data: sessionData } = await supabase.auth.getSession();
 
-        setTimeout(() => {
-          // Turbo-spin effect
-          Animated.sequence([
-            Animated.timing(spinValue, {
-              toValue: 4, // 4 full rotations
-              duration: 600,
-              easing: Easing.in(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.parallel([
-              Animated.timing(fadeValue, {
-                toValue: 0,
-                duration: 500,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }),
-              Animated.timing(screenScale, {
-                toValue: 0.95,
-                duration: 500,
-                easing: Easing.out(Easing.ease),
-                useNativeDriver: true,
-              }),
-            ]),
-          ]).start();
+        setTimeout(async () => {
+          try {
+            if (sessionData.session) {
+              const { data: userData, error: userError } = await supabase.auth.getUser();
 
-          if (data.session) {
-            router.replace('/(auth)/sign-up/pin-user');
-          } else {
+              if (userError || !userData.user) {
+                router.replace('/(auth)/sign-up/get-started');
+                return;
+              }
+
+              // ✅ Forward incidentId/safetyId/lat/lng if present
+              router.replace({
+                pathname: '/(auth)/sign-up/pin-user',
+                params: {
+                  ...(incidentId ? { incidentId } : {}),
+                  ...(safetyId ? { safetyId } : {}),
+                  ...(latitude ? { latitude } : {}),
+                  ...(longitude ? { longitude } : {}),
+                },
+              });
+            } else {
+              router.replace('/(auth)/sign-up/get-started');
+            }
+          } catch (innerErr) {
+            console.error('User check error:', innerErr);
             router.replace('/(auth)/sign-up/get-started');
           }
-        }, 2000); // branded pause
+        }, 2000);
       } catch (err) {
         console.error('Session check error:', err);
         setTimeout(() => {
-          Animated.sequence([
-            Animated.timing(spinValue, {
-              toValue: 4,
-              duration: 600,
-              easing: Easing.in(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.parallel([
-              Animated.timing(fadeValue, {
-                toValue: 0,
-                duration: 500,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }),
-              Animated.timing(screenScale, {
-                toValue: 0.95,
-                duration: 500,
-                easing: Easing.out(Easing.ease),
-                useNativeDriver: true,
-              }),
-            ]),
-          ]).start();
           router.replace('/(auth)/sign-up/get-started');
         }, 2000);
       }
     };
 
     checkSession();
-  }, []);
+  }, [incidentId, safetyId, latitude, longitude]);
 
   const spin = spinValue.interpolate({
-    inputRange: [0, 4], // extended range for turbo-spin
-    outputRange: ['0deg', '1440deg'], // 4 full spins
+    inputRange: [0, 4],
+    outputRange: ['0deg', '1440deg'],
   });
 
   return (

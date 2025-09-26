@@ -1,8 +1,8 @@
-import 'dotenv/config';
+import "dotenv/config";
 
 export default {
   expo: {
-    name: "speak-out-camanava-app",
+    name: "SpeakOut CAMANAVA",
     slug: "speak-out-camanava-app",
     version: "1.0.0",
     scheme: "speak-out-camanava-app",
@@ -24,7 +24,30 @@ export default {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff",
       },
-      package: "com.speakout.camanava", // ✅ Android package
+      package: "com.speakout.camanava",
+      config: {
+        googleMaps: {
+          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+        },
+      },
+      permissions: [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS",
+      ],
+    },
+
+    notification: {
+      icon: "./assets/logo.png",
+      color: "#4CAF50",
+      androidMode: "default",
+      androidCollapsedTitle: "SpeakOut Alerts",
     },
 
     web: {
@@ -36,49 +59,10 @@ export default {
     plugins: [
       "expo-router",
       "expo-web-browser",
-      [
-        "expo-font",
-        {
-          fonts: [
-            "node_modules/@expo-google-fonts/poppins/100Thin/Poppins_100Thin.ttf",
-            "node_modules/@expo-google-fonts/poppins/100Thin_Italic/Poppins_100Thin_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/200ExtraLight/Poppins_200ExtraLight.ttf",
-            "node_modules/@expo-google-fonts/poppins/200ExtraLight_Italic/Poppins_200ExtraLight_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/300Light/Poppins_300Light.ttf",
-            "node_modules/@expo-google-fonts/poppins/300Light_Italic/Poppins_300Light_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/400Regular/Poppins_400Regular.ttf",
-            "node_modules/@expo-google-fonts/poppins/400Regular_Italic/Poppins_400Regular_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/500Medium/Poppins_500Medium.ttf",
-            "node_modules/@expo-google-fonts/poppins/500Medium_Italic/Poppins_500Medium_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/600SemiBold/Poppins_600SemiBold.ttf",
-            "node_modules/@expo-google-fonts/poppins/600SemiBold_Italic/Poppins_600SemiBold_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf",
-            "node_modules/@expo-google-fonts/poppins/700Bold_Italic/Poppins_700Bold_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/800ExtraBold/Poppins_800ExtraBold.ttf",
-            "node_modules/@expo-google-fonts/poppins/800ExtraBold_Italic/Poppins_800ExtraBold_Italic.ttf",
-            "node_modules/@expo-google-fonts/poppins/900Black/Poppins_900Black.ttf",
-            "node_modules/@expo-google-fonts/poppins/900Black_Italic/Poppins_900Black_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/100Thin/Inter_100Thin.ttf",
-            "node_modules/@expo-google-fonts/inter/100Thin_Italic/Inter_100Thin_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/200ExtraLight/Inter_200ExtraLight.ttf",
-            "node_modules/@expo-google-fonts/inter/200ExtraLight_Italic/Inter_200ExtraLight_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/300Light/Inter_300Light.ttf",
-            "node_modules/@expo-google-fonts/inter/300Light_Italic/Inter_300Light_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
-            "node_modules/@expo-google-fonts/inter/400Regular_Italic/Inter_400Regular_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf",
-            "node_modules/@expo-google-fonts/inter/500Medium_Italic/Inter_500Medium_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf",
-            "node_modules/@expo-google-fonts/inter/600SemiBold_Italic/Inter_600SemiBold_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf",
-            "node_modules/@expo-google-fonts/inter/700Bold_Italic/Inter_700Bold_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/800ExtraBold/Inter_800ExtraBold.ttf",
-            "node_modules/@expo-google-fonts/inter/800ExtraBold_Italic/Inter_800ExtraBold_Italic.ttf",
-            "node_modules/@expo-google-fonts/inter/900Black/Inter_900Black.ttf",
-            "node_modules/@expo-google-fonts/inter/900Black_Italic/Inter_900Black_Italic.ttf"
-          ]
-        }
-      ]
+      "expo-location",
+      "expo-notifications",
+      "expo-task-manager",
+      "./plugins/nonDismissableService",
     ],
 
     experiments: {
@@ -92,7 +76,7 @@ export default {
       SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-
+      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       eas: {
         projectId: "a15c3eb5-78be-4ff4-910d-1169ad023ba7",
       },

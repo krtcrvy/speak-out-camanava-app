@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { AuthLayout } from '~/components/layouts/auth/auth-layout';
 import {
   View,
@@ -31,6 +31,14 @@ export default function PinUser() {
 
   const inputsRef = React.useRef<(TextInput | null)[]>([]);
   const router = useRouter();
+
+  // ✅ Grab params from notification if present
+  const { incidentId, safetyId, latitude, longitude } = useLocalSearchParams<{
+    incidentId?: string;
+    safetyId?: string;
+    latitude?: string;
+    longitude?: string;
+  }>();
 
   const formatPhoneNumber = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
@@ -98,8 +106,25 @@ export default function PinUser() {
       if (response.ok && result.success) {
         setSuccess(true);
         setDigits(Array(6).fill("✓"));
+
         setTimeout(() => {
-          router.replace("/(auth)/sign-up/mapsv3");
+          router.replace({
+            pathname: "/(auth)/sign-up/mapsv3",
+            params: {
+              ...(incidentId ? { incidentId } : {}),
+              ...(safetyId ? { safetyId } : {}),
+              ...(latitude ? { latitude } : {}),
+              ...(longitude ? { longitude } : {}),
+            },
+          });
+
+          // ✅ Clear params so it won’t reopen on return
+          router.setParams({
+            incidentId: undefined,
+            safetyId: undefined,
+            latitude: undefined,
+            longitude: undefined,
+          });
         }, 500);
       } else {
         setError(true);

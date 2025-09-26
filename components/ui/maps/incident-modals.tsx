@@ -279,3 +279,97 @@ export function IncidentDetailsModal({
     </View>
   );
 }
+
+/* ------------ Safety Tip (details) ------------- */
+export interface SafetyTip {
+  iid: number;
+  location: string;
+  description: string;
+  date: string;
+  time: string;
+  emoji?: string | null;
+  city?: string | null;
+}
+
+export interface SafetyTipDetailsModalProps {
+  visible: boolean;
+  onClose: () => void;
+  tip: SafetyTip | null;
+}
+
+export function SafetyTipDetailsModal({
+  visible,
+  onClose,
+  tip,
+}: SafetyTipDetailsModalProps) {
+  if (!visible || !tip) return null;
+
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 50,
+        justifyContent: "flex-end", // ⬅️ same as IncidentDetailsModal
+        alignItems: "center",
+        paddingBottom: 90, // ⬅️ stop above footer
+      }}
+      pointerEvents="box-none"
+    >
+      <Animated.View
+        entering={SlideInDown.duration(250)}
+        exiting={SlideOutDown.duration(250)}
+        className="bg-white rounded-2xl w-[96%] p-4 max-h-[55%]"
+        style={{
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 6,
+          elevation: 6,
+        }}
+        pointerEvents="auto"
+      >
+        {/* Header */}
+        <View className="flex-row justify-between items-start mb-2">
+          <View className="flex-1">
+            <View className="flex-row flex-wrap items-center mb-1">
+              <Text className="font-poppins-semibold text-lg text-gray-900 mr-2">
+                {tip.emoji || "⚠️"} Safety Reminder
+              </Text>
+              <Text className="text-xs font-poppins-regular text-gray-500">
+                {tip.date} {tip.time}
+              </Text>
+            </View>
+            {!!tip.location && (
+              <Text className="text-xs font-poppins-semibold text-green-600">
+                {tip.location}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity onPress={onClose}>
+            <Text className="text-2xl font-poppins-semibold text-gray-400">×</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Description */}
+        {tip.description ? (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 0 }}
+          >
+            <Text className="text-sm font-poppins-regular text-gray-800">
+              {tip.description}
+            </Text>
+          </ScrollView>
+        ) : (
+          <Text className="text-sm font-poppins-regular text-gray-400 italic">
+            No description provided
+          </Text>
+        )}
+      </Animated.View>
+    </View>
+  );
+}

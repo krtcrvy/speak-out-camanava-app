@@ -1,10 +1,10 @@
-import '../global.css';
-import { Slot, Stack } from 'expo-router';
-import { PhotoProvider } from '~/components/layouts/auth/photo-context';
-import { SignUpProvider } from '~/components/layouts/auth/signup-context';
-import * as SplashScreen from 'expo-splash-screen';
-import { useFonts } from 'expo-font';
-import { useEffect, useRef } from 'react';
+import "../global.css";
+import { Slot, Stack, useRouter } from "expo-router";
+import { PhotoProvider } from "~/components/layouts/auth/photo-context";
+import { SignUpProvider } from "~/components/layouts/auth/signup-context";
+import * as SplashScreen from "expo-splash-screen";
+import { useFonts } from "expo-font";
+import { useEffect, useRef } from "react";
 
 import {
   Poppins_100Thin,
@@ -25,7 +25,7 @@ import {
   Poppins_800ExtraBold_Italic,
   Poppins_900Black,
   Poppins_900Black_Italic,
-} from '@expo-google-fonts/poppins';
+} from "@expo-google-fonts/poppins";
 
 import {
   Inter_100Thin,
@@ -46,13 +46,39 @@ import {
   Inter_800ExtraBold_Italic,
   Inter_900Black,
   Inter_900Black_Italic,
-} from '@expo-google-fonts/inter';
+} from "@expo-google-fonts/inter";
 
-import * as Notifications from 'expo-notifications';
-import * as Haptics from 'expo-haptics';
-import { registerForPushNotificationsAsync } from '~/utils/registerPush';
+import * as Notifications from "expo-notifications";
+import { Vibration, Platform } from "react-native";
+import { registerForPushNotificationsAsync } from "~/utils/registerPush";
+import { startBackgroundLocation } from "~/tasks/locationTask"; // ✅ import your function
+
+// ✅ Notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+// ✅ Ask Android 13+ for POST_NOTIFICATIONS
+async function requestNotificationPermission() {
+  if (Platform.OS === "android") {
+    const settings = await Notifications.getPermissionsAsync();
+
+    if (!settings.granted) {
+      const request = await Notifications.requestPermissionsAsync();
+      console.log("Notification permission:", request);
+    }
+  }
+}
 
 export default function Layout() {
+  const router = useRouter();
+
   const [loaded, error] = useFonts({
     Poppins_100Thin,
     Poppins_100Thin_Italic,
@@ -92,9 +118,6 @@ export default function Layout() {
     Inter_900Black_Italic,
   });
 
-  // 🔔 Local toggle (later you can hook it to a real setting)
-  const hapticFeedback = true;
-
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
 
@@ -105,30 +128,44 @@ export default function Layout() {
   }, [loaded, error]);
 
   useEffect(() => {
-    // Register device for push notifications
+    // ✅ Ask for POST_NOTIFICATIONS on Android 13+
+    requestNotificationPermission();
+
+    // ✅ Register push notifications (Expo token)
     registerForPushNotificationsAsync();
 
-    // Foreground notification listener
+    // ✅ Start background location service with persistent notif
+    startBackgroundLocation();
+
+    // Foreground notifications
     notificationListener.current =
       Notifications.addNotificationReceivedListener((notification) => {
-        console.log('📩 Notification received:', notification);
-
-        if (hapticFeedback) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        }
+        Vibration.vibrate([500, 200, 500]); // strong vibration
       });
 
-    // Notification tap listener (works in background/foreground)
+    // When user taps a notification
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener((response) => {
-        console.log('👆 Notification tapped:', response);
+        Vibration.vibrate([500, 200, 500]);
 
-        if (hapticFeedback) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const data = response.notification.request.content.data as {
+          incidentId?: string;
+          safetyId?: string;
+          latitude?: string;
+          longitude?: string;
+        };
+
+        if (data?.incidentId || data?.safetyId) {
+          router.push({
+            pathname: "/(auth)/sign-up/pin-user",
+            params: {
+              ...(data.incidentId ? { incidentId: data.incidentId } : {}),
+              ...(data.safetyId ? { safetyId: data.safetyId } : {}),
+              ...(data.latitude ? { latitude: data.latitude } : {}),
+              ...(data.longitude ? { longitude: data.longitude } : {}),
+            },
+          });
         }
-
-        // TODO: Navigate based on response.notification.request.content.data
-        // e.g. router.push(`/incident/${response.notification.request.content.data.id}`);
       });
 
     return () => {
@@ -139,7 +176,7 @@ export default function Layout() {
         Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
-  }, [hapticFeedback]);
+  }, []);
 
   if (!loaded && !error) {
     return null;

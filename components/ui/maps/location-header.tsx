@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -15,6 +16,8 @@ import { supabase } from '~/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { IncidentRow } from '~/components/ui/maps/incident-modals';
 import Slider from '@react-native-community/slider';
+
+const router = useRouter();
 
 // ---------------- Helpers ----------------
 function formatReadableDate(datetime: string | null): string {
@@ -66,6 +69,7 @@ interface LocationHeaderProps {
     showReminders?: boolean;
     stationFilters?: { police: boolean; hospital: boolean; fire: boolean };
   }) => void;
+  verificationStatus?: string | null;
 }
 
 export default function LocationHeader({
@@ -83,6 +87,7 @@ export default function LocationHeader({
   showReminders,
   stationFilters,
   onChangeFilters,
+  verificationStatus,
 }: LocationHeaderProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -106,6 +111,13 @@ export default function LocationHeader({
   const [notifySafety, setNotifySafety] = useState(true);
   const [notifyIncidents, setNotifyIncidents] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+
+  // --- Temp states for notifications modal ---
+  const [tempRadius, setTempRadius] = useState(detectionRadius);
+  const [tempNotifySafety, setTempNotifySafety] = useState(notifySafety);
+  const [tempNotifyIncidents, setTempNotifyIncidents] = useState(notifyIncidents);
+  const [tempHapticFeedback, setTempHapticFeedback] = useState(hapticFeedback);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // ---------------- Supabase user_settings ----------------
   useEffect(() => {
@@ -251,8 +263,9 @@ export default function LocationHeader({
   return (
     <View className="mx-4 mt-10">
       {/* Location info row */}
-      <View className="flex-row items-center">
-        <View className="flex-1 flex-row items-center bg-white rounded-3xl px-3 py-3 shadow-2xl/90">
+      <View className="flex-row items-start">
+      <View className="flex-1 bg-white rounded-3xl px-3 py-3 shadow-2xl/90 mr-3">
+        <View className="flex-row items-center">
           <Image
             source={require('~/assets/map-icons/map.png')}
             tintColor="#15803d"
@@ -267,42 +280,55 @@ export default function LocationHeader({
             </Text>
           </View>
         </View>
-
-        {/* Right-side buttons */}
-        <View className="flex-col ml-3">
-          {/* Settings */}
-          <TouchableOpacity
-            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
-            onPress={() => setMenuVisible(true)}
-          >
-            <Image
-              source={require('~/assets/map-icons/cog.png')}
-              className="w-5 h-5"
-              tintColor="#15803d"
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-
-          {/* Filter */}
-          <TouchableOpacity
-            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
-            onPress={() => setFilterVisible(true)}
-          >
-            <Ionicons name="filter" size={20} color="#15803d" />
-          </TouchableOpacity>
-
-          {/* Inbox */}
-          <TouchableOpacity
-            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
-            onPress={() => setInboxVisible(true)}
-          >
-            <Ionicons name="mail" size={20} color="#15803d" />
-            {hasNewInbox && (
-              <View className="absolute top-1 right-1 w-3 h-3 bg-red-400 rounded-full" />
-            )}
-          </TouchableOpacity>
-        </View>
       </View>
+
+      {/* Right-side buttons */}
+      <View className="flex-col">
+        {/* Settings */}
+        <TouchableOpacity
+          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
+          onPress={() => setMenuVisible(true)}
+        >
+          <Image
+            source={require('~/assets/map-icons/cog.png')}
+            className="w-5 h-5"
+            tintColor="#15803d"
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+
+        {/* Filter */}
+        <TouchableOpacity
+          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
+          onPress={() => setFilterVisible(true)}
+        >
+          <Ionicons name="filter" size={20} color="#15803d" />
+        </TouchableOpacity>
+
+        {/* Inbox */}
+        <TouchableOpacity
+          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
+          onPress={() => setInboxVisible(true)}
+        >
+          <Ionicons name="mail" size={20} color="#15803d" />
+          {hasNewInbox && (
+            <View className="absolute top-1 right-1 w-3 h-3 bg-red-400 rounded-full" />
+          )}
+        </TouchableOpacity>
+          {/* Re-register button — only shows if user is rejected */}
+          {verificationStatus === "rejected" && (
+            <TouchableOpacity
+              className="w-10 h-10 bg-red-400 rounded-3xl items-center justify-center shadow-2xl/90 mt-3"
+              onPress={() => {
+                router.push("/(auth)/sign-up/id-photo?resubmit=true");
+              }}
+            >
+              <Ionicons name="refresh" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+      </View>
+    </View>
+
 
       {/* ---------------- Inbox Modal ---------------- */}
       <Modal
@@ -561,6 +587,15 @@ export default function LocationHeader({
         visible={notificationsVisible}
         animationType="slide"
         onRequestClose={() => setNotificationsVisible(false)}
+        onShow={() => {
+          // Sync temp states every time modal opens
+          setTempRadius(detectionRadius);
+          setTempNotifySafety(notifySafety);
+          setTempNotifyIncidents(notifyIncidents);
+          setTempHapticFeedback(hapticFeedback);
+
+          setHasUnsavedChanges(false); // reset save state
+        }}
       >
         <View className="flex-1 bg-white">
           <View className="flex-row items-center justify-between mb-2 p-4">
@@ -578,75 +613,71 @@ export default function LocationHeader({
 
           <ScrollView className="px-6">
             <Text className="font-poppins-semibold text-gray-700 mb-2 mt-4">
-              Detection Radius: {detectionRadius}m
+              Detection Radius: {tempRadius}m
             </Text>
             <Slider
               style={{ width: '100%', height: 40 }}
               minimumValue={50}
               maximumValue={1000}
               step={50}
-              value={detectionRadius}
+              value={tempRadius}
               minimumTrackTintColor="#15803d"
               maximumTrackTintColor="#d1d5db"
               thumbTintColor="#15803d"
               onValueChange={(val) => {
-                onChangeRadius(val);
-                saveSettings({ detection_radius: val });
+                setTempRadius(val);
+                setHasUnsavedChanges(true);
               }}
             />
 
             <View className="mt-6">
+              {/* Safety Reminders toggle */}
               <TouchableOpacity
                 className="flex-row items-center py-2"
                 onPress={() => {
-                  const next = !notifySafety;
-                  setNotifySafety(next);
-                  saveSettings({ notify_safety: next });
+                  setTempNotifySafety(!tempNotifySafety);
+                  setHasUnsavedChanges(true);
                 }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    notifySafety
+                    tempNotifySafety
                       ? 'bg-green-600 border-green-600'
                       : 'bg-white border-gray-400'
                   }`}
                 />
-                <Text className="text-gray-700">
-                  Notify on Safety Reminders
-                </Text>
+                <Text className="text-gray-700">Notify on Safety Reminders</Text>
               </TouchableOpacity>
 
+              {/* Incidents toggle */}
               <TouchableOpacity
                 className="flex-row items-center py-2"
                 onPress={() => {
-                  const next = !notifyIncidents;
-                  setNotifyIncidents(next);
-                  saveSettings({ notify_incidents: next });
+                  setTempNotifyIncidents(!tempNotifyIncidents);
+                  setHasUnsavedChanges(true);
                 }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    notifyIncidents
+                    tempNotifyIncidents
                       ? 'bg-green-600 border-green-600'
                       : 'bg-white border-gray-400'
                   }`}
                 />
-                <Text className="text-gray-700">
-                  Notify on Reported Incidents
-                </Text>
+                <Text className="text-gray-700">Notify on Reported Incidents</Text>
               </TouchableOpacity>
 
+              {/* Haptic Feedback toggle */}
               <TouchableOpacity
                 className="flex-row items-center py-2"
                 onPress={() => {
-                  const next = !hapticFeedback;
-                  setHapticFeedback(next);
-                  saveSettings({ haptic_feedback: next });
+                  setTempHapticFeedback(!tempHapticFeedback);
+                  setHasUnsavedChanges(true);
                 }}
               >
                 <View
                   className={`w-5 h-5 mr-3 rounded border ${
-                    hapticFeedback
+                    tempHapticFeedback
                       ? 'bg-green-600 border-green-600'
                       : 'bg-white border-gray-400'
                   }`}
@@ -655,6 +686,47 @@ export default function LocationHeader({
               </TouchableOpacity>
             </View>
           </ScrollView>
+
+          {/* Save Changes button */}
+          <View className="p-4">
+            <TouchableOpacity
+              className={`rounded-lg py-4 items-center ${
+                !hasUnsavedChanges || loading ? 'bg-gray-400' : 'bg-green-600'
+              }`}
+              disabled={!hasUnsavedChanges || loading}
+              onPress={async () => {
+                setLoading(true);
+                try {
+                  await saveSettings({
+                    detection_radius: tempRadius,
+                    notify_safety: tempNotifySafety,
+                    notify_incidents: tempNotifyIncidents,
+                    haptic_feedback: tempHapticFeedback,
+                  });
+
+                  // ✅ Commit back to live state
+                  onChangeRadius(tempRadius);
+                  setNotifySafety(tempNotifySafety);
+                  setNotifyIncidents(tempNotifyIncidents);
+                  setHapticFeedback(tempHapticFeedback);
+
+                  setHasUnsavedChanges(false); // disable button again
+                } catch (err) {
+                  console.error("Save error:", err);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-white font-poppins-semibold text-lg">
+                  Save Changes
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 

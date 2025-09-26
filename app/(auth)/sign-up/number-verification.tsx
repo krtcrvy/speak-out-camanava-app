@@ -1,3 +1,4 @@
+// app/(auth)/sign-up/number-verification.tsx
 import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import { AuthHeader } from '~/components/layouts/auth/auth-header';
 import { AuthLayout } from '~/components/layouts/auth/auth-layout';
@@ -15,8 +16,13 @@ import * as React from 'react';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_API_BASE_URL;
 
 export default function NumberVerification() {
-  const { phoneNumber } = useLocalSearchParams<{ phoneNumber?: string }>();
-  const { fromEdit, phoneNumber: phoneParam } = useLocalSearchParams();
+  const { phoneNumber, resubmit } = useLocalSearchParams<{
+    phoneNumber?: string;
+    resubmit?: string;
+  }>();
+
+  const isResubmit = resubmit === 'true';
+
   const [digits, setDigits] = React.useState(["", "", "", "", "", ""]);
   const inputs = React.useRef<(null | any)[]>([]);
   const [resendTimer, setResendTimer] = React.useState(0);
@@ -27,20 +33,20 @@ export default function NumberVerification() {
   const { idPhoto, facePhoto } = usePhotoContext();
   const router = useRouter();
 
-  // If we came from EditNumber, update the context
+  // If phone param passed, update context
   React.useEffect(() => {
     if (phoneNumber && phoneNumber !== data.contact_no) {
       setData({ contact_no: phoneNumber });
     }
   }, [phoneNumber]);
 
-  const contactNo = phoneParam || data.contact_no || 'your number';
+  const contactNo = phoneNumber || data.contact_no || 'your number';
 
   React.useEffect(() => {
-    if (fromEdit) {
-      setResendTimer(50);
+    if (!isResubmit) {
+      setResendTimer(50); // only throttle resend for signup flow
     }
-  }, [fromEdit]);
+  }, [isResubmit]);
 
   const verifyAndRegister = async (inputOtp: string) => {
     setLoading(true);
@@ -54,6 +60,13 @@ export default function NumberVerification() {
         ? await FileSystem.readAsStringAsync(facePhoto, { encoding: FileSystem.EncodingType.Base64 })
         : null;
 
+      // If resubmit, fetch current session uid
+      let uid: string | null = null;
+      if (isResubmit) {
+        const { data: userData } = await supabase.auth.getUser();
+        uid = userData?.user?.id ?? null;
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/signup-verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -64,6 +77,7 @@ export default function NumberVerification() {
           app_pin: appPin,
           id_photo: idPhotoBase64,
           face_photo: facePhotoBase64,
+          ...(isResubmit && uid ? { uid } : {}), // pass uid only if resubmit
         }),
       });
 
@@ -78,23 +92,31 @@ export default function NumberVerification() {
         return;
       }
 
-      // Set Supabase session with returned JWT
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: result.token,
-        refresh_token: result.token,
-      });
+      if (!isResubmit) {
+        // Only set Supabase session for new signup
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: result.token,
+          refresh_token: result.token,
+        });
 
-      if (sessionError) {
-        console.error('❌ Supabase login failed:', sessionError);
-        setError(true);
-        setLoading(false);
-        return;
+        if (sessionError) {
+          console.error('❌ Supabase login failed:', sessionError);
+          setError(true);
+          setLoading(false);
+          return;
+        }
       }
 
-      console.log('✅ OTP verified, user created, and logged in');
+      console.log(isResubmit ? '✅ OTP verified, user resubmitted' : '✅ OTP verified, new user created');
 
       resetData();
-      router.replace('/(auth)/sign-up/pin-enter');
+
+      // 🔑 Different redirect depending on flow
+      if (isResubmit) {
+        router.replace('/(auth)/sign-up/mapsv3'); // skip pin setup
+      } else {
+        router.replace('/(auth)/sign-up/pin-enter');
+      }
     } catch (err) {
       console.error('❌ Network error during verification:', err);
       setError(true);
@@ -123,7 +145,7 @@ export default function NumberVerification() {
   };
 
   const handleResendCode = async () => {
-    if (resendTimer > 0) return;
+    if (resendTimer > 0 || isResubmit) return; // disable resend in resubmit
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/signup-send-otp`, {
@@ -132,10 +154,8 @@ export default function NumberVerification() {
         body: JSON.stringify({ phone: contactNo }),
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
-        console.error('❌ Resend OTP failed:', result);
+        console.error('❌ Resend OTP failed');
       } else {
         console.log(`✅ Resent OTP to ${contactNo}`);
       }
@@ -184,9 +204,11 @@ export default function NumberVerification() {
             subtitle={`The OTP was sent to +63${contactNo}`}
           />
 
-          <View className="w-full mt-8 md:mt-12">
-            <StepProgress total={5} current={4} />
-          </View>
+          {!isResubmit && (
+            <View className="w-full mt-8 md:mt-12">
+              <StepProgress total={5} current={4} />
+            </View>
+          )}
 
           {loading ? (
             <View className="flex-1 justify-center items-center mt-16">
@@ -226,37 +248,41 @@ export default function NumberVerification() {
                   Kindly wait for at least 10 minutes for the OTP to arrive
                 </Note>
 
-                {resendTimer > 0 ? (
-                  <Text className="text-sm text-gray-500 mt-1">
-                    Resend available in {resendTimer}s
-                  </Text>
-                ) : (
-                  <Text
-                    className="text-[#8AA22F] text-base font-semibold mt-1"
-                    onPress={handleResendCode}
-                    style={{ opacity: resendTimer > 0 ? 0.5 : 1 }}
-                  >
-                    Resend Code
-                  </Text>
+                {!isResubmit && ( // hide resend for resubmit
+                  resendTimer > 0 ? (
+                    <Text className="text-sm text-gray-500 mt-1">
+                      Resend available in {resendTimer}s
+                    </Text>
+                  ) : (
+                    <Text
+                      className="text-[#8AA22F] text-base font-semibold mt-1"
+                      onPress={handleResendCode}
+                      style={{ opacity: resendTimer > 0 ? 0.5 : 1 }}
+                    >
+                      Resend Code
+                    </Text>
+                  )
                 )}
               </View>
             </>
           )}
         </View>
 
-        <View className="w-full pb-8">
-          <Text className="text-sm font-poppins text-gray-600 text-center">
-            Did not receive OTP?
-          </Text>
-          <Link
-            href={{ pathname: '/(auth)/sign-up/edit-number', params: { phoneNumber: contactNo } as never }}
-            asChild
-          >
-            <Text className="text-[#8AA22F] text-base font-semibold text-center mt-0 leading-4">
-              Not +63 {contactNo}?
+        {!isResubmit && ( // hide "Not You?" if resubmit
+          <View className="w-full pb-8">
+            <Text className="text-sm font-poppins text-gray-600 text-center">
+              Did not receive OTP?
             </Text>
-          </Link>
-        </View>
+            <Link
+              href={{ pathname: '/(auth)/sign-up/edit-number', params: { phoneNumber: contactNo } as never }}
+              asChild
+            >
+              <Text className="text-[#8AA22F] text-base font-semibold text-center mt-0 leading-4">
+                Not +63 {contactNo}?
+              </Text>
+            </Link>
+          </View>
+        )}
       </AuthLayout>
     </>
   );

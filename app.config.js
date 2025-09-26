@@ -78,7 +78,7 @@ export default {
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       eas: {
-        projectId: "a15c3eb5-78be-4ff4-910d-1169ad023ba7",
+        projectId: "c844463a-280a-4a05-b6ce-f75c24e0de9f",
       },
     },
   },

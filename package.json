@@ -16,6 +16,14 @@
     "@expo-google-fonts/poppins": "^0.3.1",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "2.1.2",
+<<<<<<< Updated upstream
+=======
+    "@react-native-community/datetimepicker": "github:react-native-community/datetimepicker",
+    "@react-native-community/slider": "4.5.6",
+    "@react-native-firebase/app": "^23.4.0",
+    "@react-native-firebase/messaging": "^23.4.0",
+    "@react-native-picker/picker": "^2.11.1",
+>>>>>>> Stashed changes
     "@react-navigation/native": "^7.0.3",
     "@rn-primitives/checkbox": "^1.1.0",
     "@rn-primitives/dropdown-menu": "^1.1.0",
@@ -46,8 +54,17 @@
     "react-native-screens": "~4.10.0",
     "react-native-svg": "15.11.2",
     "react-native-web": "^0.20.0",
+<<<<<<< Updated upstream
     "tailwind-merge": "^3.3.0",
     "zustand": "^4.5.1"
+=======
+    "react-native-worklets": "^0.6.0",
+    "supercluster": "^8.0.1",
+    "tailwind-merge": "^3.3.0",
+    "uuid": "^11.1.0",
+    "zustand": "^4.5.1",
+    "expo-build-properties": "~0.14.8"
+>>>>>>> Stashed changes
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

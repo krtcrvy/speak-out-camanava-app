@@ -119,6 +119,9 @@ export default function LocationHeader({
   const [tempHapticFeedback, setTempHapticFeedback] = useState(hapticFeedback);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // --- Reload button state (separate from 'loading' used for Logs) ---
+  const [refreshing, setRefreshing] = useState(false);
+
   // ---------------- Supabase user_settings ----------------
   useEffect(() => {
     if (!uid) return;
@@ -130,7 +133,7 @@ export default function LocationHeader({
         .eq('uid', uid)
         .single();
 
-      if (error && error.code === 'PGRST116') {
+      if (error && (error as any).code === 'PGRST116') {
         // No settings row → insert defaults
         const { data: newSettings } = await supabase
           .from('user_settings')
@@ -185,6 +188,7 @@ export default function LocationHeader({
       fetchUserIncidents();
       fetchUserSafetyTips();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logsVisible, uid]);
 
   const fetchUserIncidents = async () => {
@@ -223,6 +227,7 @@ export default function LocationHeader({
   useEffect(() => {
     if (!uid) return;
     fetchInbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
   const fetchInbox = async () => {
@@ -260,75 +265,102 @@ export default function LocationHeader({
     return () => clearInterval(interval);
   }, []);
 
+  // ---------------- Silent refresh handler ----------------
+  const handleSilentRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      // run all three (incidents, tips, inbox). fetchUserIncidents toggles `loading`
+      await Promise.all([fetchUserIncidents(), fetchUserSafetyTips(), fetchInbox()]);
+    } catch (err) {
+      console.error('Silent refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <View className="mx-4 mt-10">
       {/* Location info row */}
       <View className="flex-row items-start">
-      <View className="flex-1 bg-white rounded-3xl px-3 py-3 shadow-2xl/90 mr-3">
-        <View className="flex-row items-center">
-          <Image
-            source={require('~/assets/map-icons/map.png')}
-            tintColor="#15803d"
-            className="w-8 h-8 mr-3"
-            resizeMode="contain"
-          />
-          <View className="flex-1">
-            <Text className="text-xs text-gray-500">Your Current Location</Text>
-            <Text className="text-sm font-bold text-green-600">{street}</Text>
-            <Text className="text-xs text-gray-600" numberOfLines={1}>
-              {address}
-            </Text>
+        <View className="flex-1 bg-white rounded-3xl px-3 py-3 shadow-2xl/90 mr-3">
+          <View className="flex-row items-center">
+            <Image
+              source={require('~/assets/map-icons/map.png')}
+              tintColor="#15803d"
+              className="w-8 h-8 mr-3"
+              resizeMode="contain"
+            />
+            <View className="flex-1">
+              <Text className="text-xs text-gray-500">Your Current Location</Text>
+              <Text className="text-sm font-bold text-green-600">{street}</Text>
+              <Text className="text-xs text-gray-600" numberOfLines={1}>
+                {address}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      {/* Right-side buttons */}
-      <View className="flex-col">
-        {/* Settings */}
-        <TouchableOpacity
-          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
-          onPress={() => setMenuVisible(true)}
-        >
-          <Image
-            source={require('~/assets/map-icons/cog.png')}
-            className="w-5 h-5"
-            tintColor="#15803d"
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+        {/* Right-side buttons */}
+        <View className="flex-col">
+          {/* Settings */}
+          <TouchableOpacity
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
+            onPress={() => setMenuVisible(true)}
+          >
+            <Image
+              source={require('~/assets/map-icons/cog.png')}
+              className="w-5 h-5"
+              tintColor="#15803d"
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
 
-        {/* Filter */}
-        <TouchableOpacity
-          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
-          onPress={() => setFilterVisible(true)}
-        >
-          <Ionicons name="filter" size={20} color="#15803d" />
-        </TouchableOpacity>
+          {/* Filter */}
+          <TouchableOpacity
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
+            onPress={() => setFilterVisible(true)}
+          >
+            <Ionicons name="filter" size={20} color="#15803d" />
+          </TouchableOpacity>
 
-        {/* Inbox */}
-        <TouchableOpacity
-          className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
-          onPress={() => setInboxVisible(true)}
-        >
-          <Ionicons name="mail" size={20} color="#15803d" />
-          {hasNewInbox && (
-            <View className="absolute top-1 right-1 w-3 h-3 bg-red-400 rounded-full" />
-          )}
-        </TouchableOpacity>
+          {/* Inbox */}
+          <TouchableOpacity
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90 mb-3"
+            onPress={() => setInboxVisible(true)}
+          >
+            <Ionicons name="mail" size={20} color="#15803d" />
+            {hasNewInbox && (
+              <View className="absolute top-1 right-1 w-3 h-3 bg-red-400 rounded-full" />
+            )}
+          </TouchableOpacity>
+
+          {/* 🔄 Reload Button (silently refreshes incidents, tips, and inbox) */}
+          <TouchableOpacity
+            className="w-10 h-10 bg-white rounded-3xl items-center justify-center shadow-2xl/90"
+            onPress={handleSilentRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#15803d" />
+            ) : (
+              <Ionicons name="reload" size={20} color="#15803d" />
+            )}
+          </TouchableOpacity>
+
           {/* Re-register button — only shows if user is rejected */}
-          {verificationStatus === "rejected" && (
+          {verificationStatus === 'rejected' && (
             <TouchableOpacity
               className="w-10 h-10 bg-red-400 rounded-3xl items-center justify-center shadow-2xl/90 mt-3"
               onPress={() => {
-                router.push("/(auth)/sign-up/id-photo?resubmit=true");
+                router.push('/(auth)/sign-up/id-photo?resubmit=true');
               }}
             >
               <Ionicons name="refresh" size={20} color="#fff" />
             </TouchableOpacity>
           )}
+        </View>
       </View>
-    </View>
-
 
       {/* ---------------- Inbox Modal ---------------- */}
       <Modal

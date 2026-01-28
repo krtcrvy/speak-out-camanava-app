@@ -289,6 +289,8 @@ export interface SafetyTip {
   time: string;
   emoji?: string | null;
   city?: string | null;
+  latitude: number;
+  longitude: number
 }
 
 export interface SafetyTipDetailsModalProps {

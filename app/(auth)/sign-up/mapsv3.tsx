@@ -20,11 +20,12 @@ import type {
   LocationObjectCoords,
   LocationSubscription,
 } from 'expo-location';
+import * as Notifications from 'expo-notifications';
 
 import Supercluster from 'supercluster';
 import type { Feature, Point } from 'geojson';
+import { formatDistanceToNowStrict, parseISO } from "date-fns";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BottomSheet, BottomSheetTab } from '~/components/ui/maps/map-footer';
 import LocationHeader from '~/components/ui/maps/location-header';
 import { formatAddress, ExtendedGeocodedAddress } from '~/utils/formatAddress';
@@ -68,16 +69,9 @@ function regionToZoom(region: Region): number {
   const angle = region.longitudeDelta;
   return Math.round(Math.log(360 / angle) / Math.LN2);
 }
-
 /** ---------------- Component ---------------- */
 export default function Maps() {
   const router = useRouter();
-
-  // ✅ read forwarded params from LoadingScreen / PinUser
-  const { incidentId, safetyId } = useLocalSearchParams<{
-    incidentId?: string;
-    safetyId?: string;
-  }>();
 
   const [activeTab, setActiveTab] = useState<BottomSheetTab>('Map');
 
@@ -89,6 +83,7 @@ export default function Maps() {
   const [address, setAddress] = useState('Fetching location…');
   const [city, setCity] = useState<string>('None');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const mapRef = useRef<MapView>(null);
   const isProgrammaticMove = useRef(false);
@@ -109,6 +104,8 @@ export default function Maps() {
   /** -------- incidents + supercluster -------- */
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
   const [safetyTips, setSafetyTips] = useState<any[]>([]);
+  const [inbox, setInbox] = useState<any[]>([]);
+
   const superclusterRef =
     useRef<Supercluster<ClusterProps, Supercluster.AnyProps> | null>(null);
   const [tipModalVisible, setTipModalVisible] = useState(false);
@@ -159,6 +156,11 @@ export default function Maps() {
   const [verificationStatus, setVerificationStatus] = useState<string | null>(
     null
   );
+
+  /** realtime channel refs for cleanup */
+  const incidentsChannelRef = useRef<any | null>(null);
+  const tipsChannelRef = useRef<any | null>(null);
+  const inboxChannelRef = useRef<any | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -212,60 +214,192 @@ export default function Maps() {
   const isVerified = verificationStatus === 'verified';
   const isHydrating = sessionUserId === undefined;
 
-  /** -------- location + incidents load (from AsyncStorage) -------- */
+  /** -------- fetchData (full refetch) -------- */
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // incidents
+      const { data: incidentsData, error: incErr } = await supabase
+        .from('incidents')
+        .select('*');
+
+      if (incErr) {
+        console.error('Error fetching incidents:', incErr);
+      }
+
+      // safety tips
+      const { data: tipsData, error: tipsErr } = await supabase
+        .from('safety_tips')
+        .select('*');
+
+      if (tipsErr) {
+        console.error('Error fetching safety_tips:', tipsErr);
+      }
+
+      // inbox for current user (if available)
+      let inboxData: any[] = [];
+      if (sessionUserId) {
+        const { data: inboxRes, error: inboxErr } = await supabase
+          .from('inbox')
+          .select('*')
+          .eq('uid', sessionUserId);
+
+        if (inboxErr) {
+          console.error('Error fetching inbox:', inboxErr);
+        } else {
+          inboxData = inboxRes ?? [];
+        }
+      }
+
+      setIncidents(incidentsData ?? []);
+      setSafetyTips(tipsData ?? []);
+      setInbox(inboxData ?? []);
+    } catch (err) {
+      console.error('fetchData error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** -------- set up realtime subscriptions (full refetch on changes) -------- */
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    // Only set up channels once sessionUserId settled (so inbox filter works)
+    if (sessionUserId === undefined) return;
 
-    const loadFromStorage = async () => {
+    // helper to create & store channel ref
+    const setup = () => {
+      // incidents channel
       try {
-        // 🟢 Get latest user location
-        const locJson = await AsyncStorage.getItem("latestUserLocation");
-        if (locJson) {
-          const parsed = JSON.parse(locJson);
-          setLiveCoords({
-            latitude: parsed.latitude,
-            longitude: parsed.longitude,
-            altitude: null,
-            accuracy: null,
-            altitudeAccuracy: null,
-            heading: null,
-            speed: null,
-          });
-          setDeviceLocation({
-            latitude: parsed.latitude,
-            longitude: parsed.longitude,
-          });
+        const incidentsChannel = supabase
+          .channel('incidents-realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'incidents' },
+            () => {
+              fetchData();
+            }
+          )
+          .subscribe();
+        incidentsChannelRef.current = incidentsChannel;
+      } catch (e) {
+        console.warn('Failed to create incidents channel', e);
+      }
 
-          // Only set map region once
-          if (!mapRegion) {
-            setMapRegion({
-              latitude: parsed.latitude,
-              longitude: parsed.longitude,
-              latitudeDelta: 0.0015,
-              longitudeDelta: 0.0015,
-            });
-          }
-        }
+      // safety tips channel
+      try {
+        const tipsChannel = supabase
+          .channel('safety-tips-realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'safety_tips' },
+            () => {
+              fetchData();
+            }
+          )
+          .subscribe();
+        tipsChannelRef.current = tipsChannel;
+      } catch (e) {
+        console.warn('Failed to create tips channel', e);
+      }
 
-        // 🟢 Get latest incidents + tips
-        const dataJson = await AsyncStorage.getItem("latestIncidentsAndTips");
-        if (dataJson) {
-          const parsed = JSON.parse(dataJson);
-          setIncidents(parsed.incidents || []);
-          setSafetyTips(parsed.safetyTips || []);
+      // inbox channel (scoped to user)
+      if (sessionUserId) {
+        try {
+          const inboxChannel = supabase
+            .channel('inbox-realtime')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'inbox',
+                filter: `uid=eq.${sessionUserId}`,
+              },
+              () => {
+                fetchData();
+              }
+            )
+            .subscribe();
+          inboxChannelRef.current = inboxChannel;
+        } catch (e) {
+          console.warn('Failed to create inbox channel', e);
         }
-      } catch (err) {
-        console.error("❌ Failed to load from AsyncStorage:", err);
-      } finally {
-        setLoading(false);
       }
     };
 
-    loadFromStorage();
-    interval = setInterval(loadFromStorage, 2000);
+    setup();
 
-    return () => clearInterval(interval);
-  }, [mapRegion]);
+    return () => {
+      try {
+        if (incidentsChannelRef.current) supabase.removeChannel(incidentsChannelRef.current);
+      } catch (e) {}
+      try {
+        if (tipsChannelRef.current) supabase.removeChannel(tipsChannelRef.current);
+      } catch (e) {}
+      try {
+        if (inboxChannelRef.current) supabase.removeChannel(inboxChannelRef.current);
+      } catch (e) {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionUserId]);
+
+  /** -------- location + initial load -------- */
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Location permission not granted');
+        setLoading(false);
+        return;
+      }
+
+      // initial data load (from supabase)
+      await fetchData();
+
+      // grab current location
+      try {
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+
+        setUserLocation(current);
+        setLiveCoords(current.coords);
+        setDeviceLocation({
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        });
+
+        const initialRegion: Region = {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          latitudeDelta: 0.0015,
+          longitudeDelta: 0.0015,
+        };
+        setMapRegion(initialRegion);
+
+        subscriptionRef.current = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 2000,
+            distanceInterval: 2,
+          },
+          (loc) => {
+            setLiveCoords(loc.coords);
+          }
+        );
+      } catch (err) {
+        console.error('Error getting location:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      subscriptionRef.current?.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** reverse-geocode when liveCoords change */
   useEffect(() => {
@@ -318,9 +452,19 @@ export default function Maps() {
 
   /** -------- scaling for station pins -------- */
   const zoomLevel = mapRegion ? regionToZoom(mapRegion) : 16;
-  const baseSize = 30;
+  const baseSize = 20;
   const scaleFactor = Math.max(0.5, Math.min(1, zoomLevel / 18));
   const pinSize = baseSize * scaleFactor;
+  const clusterSize = 30;
+
+  /** -------- incidents colors -------- */
+  const incidentColors = (type: string) => {
+    const lower = (type || '').toLowerCase();
+    if (lower.includes('theft')) return '#3B82F6';
+    if (lower.includes('sexual')) return '#EF4444';
+    if (lower.includes('disorderly')) return '#22C55E';
+    return 'gray'; // fallback
+  };
 
   /** -------- filter incidents -------- */
   const filteredIncidents = useMemo(() => {
@@ -390,10 +534,10 @@ export default function Maps() {
   /** -------- vibration detection -------- */
   useEffect(() => {
     if (!liveCoords) return;
-    if (userRadius == null) return;            // wait until loaded
-    if (timeFilter == null) return;            // wait until loaded
-    if (pinTypes == null) return;              // wait until loaded
-    if (showReminders == null) return;         // wait until loaded
+    if (userRadius == null) return;
+    if (timeFilter == null) return;
+    if (pinTypes == null) return;
+    if (showReminders == null) return;
 
     const visiblePins = [
       ...filteredIncidents.map((inc) => ({
@@ -402,6 +546,7 @@ export default function Maps() {
         coords: { lat: inc.latitude, lng: inc.longitude },
         date: inc.date,
         time: inc.time,
+        description: inc.description,
       })),
       ...(showReminders
         ? safetyTips.map((tip) => ({
@@ -410,6 +555,8 @@ export default function Maps() {
             coords: { lat: tip.latitude, lng: tip.longitude },
             date: tip.date,
             time: tip.time,
+            description: tip.description,
+            emoji: tip.emoji ?? "💡"
           }))
         : []),
     ];
@@ -427,15 +574,41 @@ export default function Maps() {
 
       if (dist <= userRadius) {
         if (!record.inside) {
-          console.log(
-            `🔔 ${pin.type} at (${pin.coords.lat}, ${pin.coords.lng}) — Date: ${pin.date} ${pin.time}`
-          );
-          if (!triggeredThisCycle) {
-            // 🚨 Strong, long vibration for both incidents & safety tips
-            Vibration.vibrate([500, 200, 500]); // buzz–pause–buzz
-            triggeredThisCycle = true;
+          // compute ago inline
+          let ago = "just now";
+          try {
+            const parsed = parseISO(`${pin.date}T${pin.time}`);
+            ago = formatDistanceToNowStrict(parsed, { addSuffix: true });
+          } catch {}
+
+          const distLabel =
+            dist < 1000 ? `${Math.round(dist)}m` : `${(dist / 1000).toFixed(1)}km`;
+
+          let title = "";
+          let body = "";
+
+          if (pin.type === "Safety Tip") {
+            const tip = pin as { emoji?: string; description: string };
+            title = `Safety Reminder Nearby! (${distLabel}, ${ago})`;
+            body = `${tip.emoji ?? "💡"} ${tip.description}`;
+          } else {
+            title = `Incident Nearby! (${distLabel}, ${ago})`;
+            body = `${pin.type}\n${pin.description}`;
           }
+
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title,
+              body,
+              sound: true,
+            },
+            trigger: null,
+          });
+
+          Vibration.vibrate([500, 200, 500]);
+
           record.inside = true;
+          triggeredThisCycle = true;
         }
       } else {
         if (record.inside) {
@@ -449,6 +622,7 @@ export default function Maps() {
       triggeredRef.current[pin.id] = record;
     });
   }, [liveCoords, filteredIncidents, safetyTips, showReminders, userRadius, timeFilter, pinTypes]);
+
 
   useEffect(() => {
     if (!showReminders) {
@@ -535,90 +709,63 @@ export default function Maps() {
     );
   };
 
-  /** ---------------- Auto-open notification params ---------------- */
-  useEffect(() => {
-    if (loading) return;
-    if (!incidentId && !safetyId) return;
+  /** -------- header refresh handler (wired to LocationHeader) -------- */
+  const handleRefresh = async () => {
+    // Called when user presses refresh in header
+    setRefreshing(true);
+    try {
+      // refetch incidents/tips/inbox
+      await fetchData();
 
-    const { latitude, longitude } = useLocalSearchParams<{
-      latitude?: string;
-      longitude?: string;
-    }>();
+      // update current device location & address
+      try {
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
 
-    const clearParams = () => {
-      router.setParams({
-        incidentId: undefined,
-        safetyId: undefined,
-        latitude: undefined,
-        longitude: undefined,
-      });
-    };
+        setUserLocation(current);
+        setLiveCoords(current.coords);
+        setDeviceLocation({
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        });
 
-    if (incidentId) {
-      const inc = incidents.find((i) => String(i.iid) === String(incidentId));
-      if (inc) {
-        closeAllModals();
-        setSelectedIncident(inc);
-        setSingleModalVisible(true);
-        isProgrammaticMove.current = true;
-        mapRef.current?.animateToRegion(
-          {
-            latitude: inc.latitude,
-            longitude: inc.longitude,
-            latitudeDelta: 0.0015,
-            longitudeDelta: 0.0015,
-          },
-          500
-        );
-      } else if (latitude && longitude) {
-        // fallback: zoom to coords even if incident not cached
-        isProgrammaticMove.current = true;
-        mapRef.current?.animateToRegion(
-          {
-            latitude: Number(latitude),
-            longitude: Number(longitude),
-            latitudeDelta: 0.0015,
-            longitudeDelta: 0.0015,
-          },
-          500
-        );
+        // optionally recenter map when refreshing (comment/uncomment as desired)
+        // isProgrammaticMove.current = true;
+        // mapRef.current?.animateToRegion({
+        //   latitude: current.coords.latitude,
+        //   longitude: current.coords.longitude,
+        //   latitudeDelta: 0.005,
+        //   longitudeDelta: 0.005,
+        // }, 700);
+
+        // reverse geocode and update header text
+        const geocodes = await Location.reverseGeocodeAsync({
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        });
+
+        if (geocodes.length > 0) {
+          const { formatted, city: newCity, street: newStreet } = formatAddress(
+            geocodes[0] as ExtendedGeocodedAddress
+          );
+          setStreet(newStreet);
+          setAddress(formatted);
+          setCity(newCity as any);
+        }
+      } catch (err) {
+        console.error('Failed updating device location during refresh:', err);
       }
-      clearParams();
-      return;
+    } catch (err) {
+      console.error('handleRefresh error:', err);
+    } finally {
+      // small delay to make refresh UX feel deliberate
+      setTimeout(() => {
+        setRefreshing(false);
+        setLoading(false);
+      }, 250);
     }
-
-    if (safetyId) {
-      const tip = safetyTips.find((t) => String(t.iid) === String(safetyId));
-      if (tip) {
-        closeAllModals();
-        setSelectedTip(tip);
-        setTipModalVisible(true);
-        isProgrammaticMove.current = true;
-        mapRef.current?.animateToRegion(
-          {
-            latitude: tip.latitude,
-            longitude: tip.longitude,
-            latitudeDelta: 0.0015,
-            longitudeDelta: 0.0015,
-          },
-          500
-        );
-      } else if (latitude && longitude) {
-        // fallback zoom
-        isProgrammaticMove.current = true;
-        mapRef.current?.animateToRegion(
-          {
-            latitude: Number(latitude),
-            longitude: Number(longitude),
-            latitudeDelta: 0.0015,
-            longitudeDelta: 0.0015,
-          },
-          500
-        );
-      }
-      clearParams();
-    }
-  }, [incidentId, safetyId, loading, incidents, safetyTips, router]);
+  };
 
   /** -------- render -------- */
   if (loading || !mapRegion || !userLocation || isHydrating) {
@@ -658,147 +805,201 @@ export default function Maps() {
         >
           {/* Station markers */}
           {stationFilters.police &&
-            policeStations.map((st) =>
-              st.latitude && st.longitude ? (
-                <Marker
-                  key={`police-${st.id}`}
-                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                  onPress={() => {
-                    isProgrammaticMove.current = true;
-                    setSelectedStation(st);
-                    setStationModalVisible(true);
-                  }}
-                >
-                  <Image
-                    source={require('~/assets/map-icons/police_dept_pins.png')}
-                    style={{ width: pinSize, height: pinSize}}
-                    resizeMode="contain"
-                  />
-                </Marker>
-              ) : null
-            )}
+          policeStations.map((st) =>
+            st.latitude && st.longitude ? (
+              <Marker
+                key={`police-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                centerOffset={{ x: 0, y: 0 }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/police_dept_pins.png')}
+                  style={{ width: pinSize, height: pinSize }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            ) : null
+          )}
 
-          {stationFilters.hospital &&
-            hospitalStations.map((st) =>
-              st.latitude && st.longitude ? (
-                <Marker
-                  key={`hosp-${st.id}`}
-                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                  onPress={() => {
-                    isProgrammaticMove.current = true;
-                    setSelectedStation(st);
-                    setStationModalVisible(true);
-                  }}
-                >
-                  <Image
-                    source={require('~/assets/map-icons/hospital_pins.png')}
-                    style={{ width: pinSize, height: pinSize }}
-                    resizeMode="contain"
-                  />
-                </Marker>
-              ) : null
-            )}
+        {stationFilters.hospital &&
+          hospitalStations.map((st) =>
+            st.latitude && st.longitude ? (
+              <Marker
+                key={`hosp-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                centerOffset={{ x: 0, y: 0 }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/hospital_pins.png')}
+                  style={{ width: pinSize, height: pinSize }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            ) : null
+          )}
 
-          {stationFilters.fire &&
-            fireStations.map((st) =>
-              st.latitude && st.longitude ? (
-                <Marker
-                  key={`fire-${st.id}`}
-                  coordinate={{ latitude: st.latitude, longitude: st.longitude }}
-                  onPress={() => {
-                    isProgrammaticMove.current = true;
-                    setSelectedStation(st);
-                    setStationModalVisible(true);
-                  }}
-                >
-                  <Image
-                    source={require('~/assets/map-icons/fire_dept_pins.png')}
-                    style={{ width: pinSize, height: pinSize }}
-                    resizeMode="contain"
-                  />
-                </Marker>
-              ) : null
-            )}
+        {stationFilters.fire &&
+          fireStations.map((st) =>
+            st.latitude && st.longitude ? (
+              <Marker
+                key={`fire-${st.id}`}
+                coordinate={{ latitude: st.latitude, longitude: st.longitude }}
+                onPress={() => {
+                  isProgrammaticMove.current = true;
+                  setSelectedStation(st);
+                  setStationModalVisible(true);
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                centerOffset={{ x: 0, y: 0 }}
+              >
+                <Image
+                  source={require('~/assets/map-icons/fire_dept_pins.png')}
+                  style={{ width: pinSize, height: pinSize }}
+                  resizeMode="contain"
+                />
+              </Marker>
+            ) : null
+          )}
 
           {/* User Circle */}
           {(liveCoords || mapRegion) && (
-          <Circle
-            center={{
-              latitude: liveCoords?.latitude ?? mapRegion?.latitude ?? 0,
-              longitude: liveCoords?.longitude ?? mapRegion?.longitude ?? 0,
-            }}
-            radius={userRadius} // ✅ always use actual state
-            strokeColor="rgb(157, 218, 44)"
-            fillColor="rgba(123, 255, 0, 0.2)"
-          />
-        )}
+            <Circle
+              center={{
+                latitude: liveCoords?.latitude ?? mapRegion?.latitude ?? 0,
+                longitude: liveCoords?.longitude ?? mapRegion?.longitude ?? 0,
+              }}
+              radius={userRadius}
+              strokeColor="rgb(157, 218, 44)"
+              fillColor="rgba(123, 255, 0, 0.2)"
+            />
+          )}
 
+         {/* Clusters & incidents */}
+          {mapRegion &&
+            clusters.map((c: any) => {
+              const [lng, lat] = c.geometry.coordinates;
+              const { cluster: isCluster, point_count: pointCount } = c.properties;
 
-          {/* Clusters & incidents */}
-          {clusters.map((c: any) => {
-            const [lng, lat] = c.geometry.coordinates;
-            const { cluster: isCluster, point_count: pointCount } = c.properties;
+              // --- CLUSTER ---
+              if (isCluster) {
+                const clusterSize = 36; // fixed pixel size
 
-            if (isCluster) {
+                return (
+                  <Marker
+                    key={`cluster-${c.id}`}
+                    coordinate={{ latitude: lat, longitude: lng }}
+                    onPress={() => handleClusterPress(c.id)}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                    centerOffset={{ x: 0, y: 0 }}
+                  >
+                    <View
+                      style={{
+                        width: clusterSize,
+                        height: clusterSize,
+                        borderRadius: clusterSize / 2,
+                        backgroundColor: 'rgba(255,0,0,0.7)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderWidth: 1.5,
+                        borderColor: '#fff',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: 'white',
+                          fontWeight: 'bold',
+                          fontSize: 14, // make sure text is readable
+                        }}
+                      >
+                        {pointCount}
+                      </Text>
+                    </View>
+                  </Marker>
+                );
+              }
+
+              // --- INCIDENT ---
+              const incident: IncidentRow = c.properties.incident;
+              const incidentSize = 14;
+
+              const incidentColors = (type: string) => {
+                const lower = (type || '').toLowerCase();
+                if (lower.includes('theft')) return '#3B82F6';
+                if (lower.includes('sexual')) return '#EF4444';
+                if (lower.includes('disorderly')) return '#22C55E';
+                return 'gray';
+              };
+
+              const color = incidentColors(incident.type_of_incident || '');
+
               return (
                 <Marker
-                  key={`cluster-${c.id}`}
-                  coordinate={{ latitude: lat, longitude: lng }}
-                  onPress={() => handleClusterPress(c.id)}
+                  key={`incident-${incident.iid}`}
+                  coordinate={{
+                    latitude: incident.latitude,
+                    longitude: incident.longitude,
+                  }}
+                  onPress={() => handleIncidentPress(incident)}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  centerOffset={{ x: 0, y: 0 }}
                 >
                   <View
                     style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 21,
-                      backgroundColor: 'rgba(255, 0, 0, 0.8)',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderWidth: 2,
+                      width: incidentSize,
+                      height: incidentSize,
+                      borderRadius: incidentSize / 2,
+                      backgroundColor: color,
+                      borderWidth: 1,
                       borderColor: '#fff',
                     }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                      {pointCount}
-                    </Text>
-                  </View>
+                  />
                 </Marker>
               );
-            }
-
-            const incident: IncidentRow = c.properties.incident;
-            return (
-              <Marker
-                key={`incident-${incident.iid}`}
-                coordinate={{
-                  latitude: incident.latitude,
-                  longitude: incident.longitude,
-                }}
-                pinColor="#FF0000"
-                onPress={() => handleIncidentPress(incident)}
-              />
-            );
-          })}
+            })}
 
           {/* Safety Tips */}
-          {showReminders === true &&
+          {showReminders &&
             safetyTips
               .filter((tip) => tip.latitude && tip.longitude)
-              .map((tip) => (
-                <Marker
-                  key={`tip-${tip.iid}`}
-                  coordinate={{ latitude: tip.latitude, longitude: tip.longitude }}
-                  onPress={() => {
-                    closeAllModals();
-                    setSelectedTip(tip);
-                    setTipModalVisible(true);
-                    isProgrammaticMove.current = true; // ✅ prevent auto-close on tap
-                  }}
-                >
-                  <Text style={{ fontSize: 24 }}>{tip.emoji || '⚠️'}</Text>
-                </Marker>
-              ))}
+              .map((tip) => {
+                const tipSize = 28; // fixed pixels, doesn’t change with zoom
 
+                return (
+                  <Marker
+                    key={`tip-${tip.iid}`}
+                    coordinate={{
+                      latitude: tip.latitude,
+                      longitude: tip.longitude,
+                    }}
+                    onPress={() => {
+                      closeAllModals();
+                      setSelectedTip(tip);
+                      setTipModalVisible(true);
+                      isProgrammaticMove.current = true;
+                    }}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                    centerOffset={{ x: 0, y: 0 }}
+                  >
+                    <Image
+                      source={require('~/assets/map-icons/safety.png')}
+                      style={{ width: tipSize, height: tipSize }}
+                      resizeMode="contain"
+                    />
+                  </Marker>
+                );
+              })}
         </MapView>
 
         {/* Header */}
@@ -827,6 +1028,9 @@ export default function Maps() {
               if (f.stationFilters !== undefined) setStationFilters(f.stationFilters);
             }}
             verificationStatus={verificationStatus}
+            // NEW: wire refresh handler & state
+            onRefresh={handleRefresh}
+            isRefreshing={refreshing}
           />
         </View>
 
@@ -894,35 +1098,34 @@ export default function Maps() {
                 }
 
                 try {
-                  // 🟢 Read from AsyncStorage instead of fetching fresh GPS
-                  const locJson = await AsyncStorage.getItem("latestUserLocation");
-                  if (locJson) {
-                    const parsed = JSON.parse(locJson);
-                    setDeviceLocation({
-                      latitude: parsed.latitude,
-                      longitude: parsed.longitude,
-                    });
+                  const current = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                  });
 
-                    const geocodes = await Location.reverseGeocodeAsync({
-                      latitude: parsed.latitude,
-                      longitude: parsed.longitude,
-                    });
+                  setDeviceLocation({
+                    latitude: current.coords.latitude,
+                    longitude: current.coords.longitude,
+                  });
 
-                    if (geocodes.length > 0) {
-                      const { formatted, city, street } = formatAddress(
-                        geocodes[0] as ExtendedGeocodedAddress
-                      );
-                      setStreet(street);
-                      setAddress(formatted);
-                      setCity(city as any);
-                    }
+                  const geocodes = await Location.reverseGeocodeAsync({
+                    latitude: current.coords.latitude,
+                    longitude: current.coords.longitude,
+                  });
+
+                  if (geocodes.length > 0) {
+                    const { formatted, city, street } = formatAddress(
+                      geocodes[0] as ExtendedGeocodedAddress
+                    );
+                    setStreet(street);
+                    setAddress(formatted);
+                    setCity(city as any);
                   }
 
                   closeAllModals();
                   setReportModalVisible(true);
                   setActiveTab('Report');
                 } catch (err) {
-                  console.error('❌ Failed to read location from AsyncStorage before opening Report modal:', err);
+                  console.error('Failed to fetch location before opening Report modal:', err);
                 }
               } else if (tab === 'Call') {
                 closeAllModals();
@@ -990,7 +1193,6 @@ export default function Maps() {
         tip={selectedTip}
       />
 
-
       <StationDetailsModal
         visible={stationModalVisible}
         onClose={() => setStationModalVisible(false)}
@@ -998,6 +1200,7 @@ export default function Maps() {
         onLocate={(st: Station) => {
           zoomToStation(st);
         }}
+
       />
     </>
   );

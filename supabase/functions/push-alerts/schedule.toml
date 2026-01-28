@@ -1,0 +1,4 @@
+[schedule]
+cron = "*/1 * * * *"
+endpoint = "/"
+method = "POST"

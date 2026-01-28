@@ -48,6 +48,9 @@ export default {
       color: "#4CAF50",
       androidMode: "default",
       androidCollapsedTitle: "SpeakOut Alerts",
+      androidShowBadge: true,
+      // 👇 ensures default notifications go to your custom channel
+      androidChannelId: "camanava-alerts",
     },
 
     web: {
@@ -59,7 +62,16 @@ export default {
     plugins: [
       "expo-router",
       "expo-web-browser",
-      "expo-location",
+      [
+        "expo-location",
+        {
+          isAndroidBackgroundLocationEnabled: true,
+          locationAlwaysAndWhenInUsePermission:
+            "Allow SpeakOut CAMANAVA to access your location even when the app is closed or not in use.",
+          locationWhenInUsePermission:
+            "Allow SpeakOut CAMANAVA to access your location while using the app.",
+        },
+      ],
       "expo-notifications",
       "expo-task-manager",
       "./plugins/nonDismissableService",
